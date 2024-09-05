@@ -1,18 +1,37 @@
 // Cannot re-assign value and cannot be changed. Allowed in global scope
 
 // Types:
-// i8 i16 i32 i64 i128 (int == ptr to the best fit size)
-// u8 u16 u32 u64 u128 (uint == ptr to the best fit size)
-//    f16 f32 f64      (float == ptr to the best fit size)
+// i8 i16 i32 i64 i128
+// u8 u16 u32 u64 u128
+//    f16 f32 f64
 // string
-// any
-// undefined
+// null
+// error
 
-// Static: static variable: type = undefined
-// Immutable: const variable: type = undefined
-//      variable :: undefined
-// Mutable: let variable: type = undefined
-//      variable := undefined
+// [Static] static variable: type = undefined;
+// [Immutable] variable : type : undefined;
+//             variable :: undefined
+// [Mutable] variable : type = undefined
+//           variable := undefined
+
+/*
+    Operators:
+
+        Math:
+
+            + - * / % %%
+            | ~ & &~ << >>
+
+        Comparison
+
+            == != < <= > >= && || !
+
+        Address
+            & ^
+
+        Ternary
+           true ? true : false
+*/
 
 const x: int = 0
 x : int : 0
@@ -55,9 +74,9 @@ pub union Option {
     Year: u16
 }
 
-pub enum Error {
+pub error Error {
     UnkownError,
-    OptionError(String)
+    OptionError: String
 }
 
 union_enum :: fn() Error!?String {
@@ -70,46 +89,49 @@ union_enum :: fn() Error!?String {
 }
 
 pub template SayHello {
-    say_hello::fn(self: &Self)
+    say_hello :: fn(self: &Self)
 }
 
-struct Data {
-    name: String
+Data :: struct {
+    name: String,
 
-    _::fn(self) {
+    _ :: fn(self) {
         /* Deconstructor: Called on dropping self */
     }
 
-    name::fn(&self) &String {
+    name :: fn(&self) &String {
         &self.name
     }
 
-    hello::fn() {
+    hello :: fn() {
         print("Hello")
     }
 }
 
 extend Data with SayHello {
-    say_hello::fn(&self) {
+    say_hello :: fn(&self) {
         let suffix = '!'
         print("Hello, {}{}", self.name, suffix)
     }
 }
 
-math :: fn(name: String, ..args: []String) {
+math :: fn(name: String, args: ..String) {
   let result: int = 13*4+6/5%((4**4)//3)-3;
 
-  if true and false or not false {
+  if true && false || !false {
   }
 }
 
 optional :: (code?: i32) bool {
+    if (code != null) {}
+    if (code) {}
     false
 }
 
 main :: fn() {
     print("Hello, world!");
     print("Hello, {}!", Sub::NAME);
-    let value: []string = [];
-    let slice: &[]string = value[..3];
+    // Slice that is not defined yet
+    let value = [3]string{ "Some", "values", "here" };
+    let slice: []string = value[..3];
 }

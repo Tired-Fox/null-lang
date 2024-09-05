@@ -15,4 +15,5 @@ fn main() {
                  call    ExitProcess            ; exit() ;
     };
 
-    println!("{}", result);}
+    println!("{}", result);
+}
