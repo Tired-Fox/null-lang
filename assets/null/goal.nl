@@ -88,16 +88,12 @@ union_enum :: fn() Error!?String {
     let my_option = Option { Day: Weekday::Monday }
 }
 
-pub template SayHello {
+pub interface SayHello {
     say_hello :: fn(self: &Self)
 }
 
 Data :: struct {
     name: String,
-
-    _ :: fn(self) {
-        /* Deconstructor: Called on dropping self */
-    }
 
     name :: fn(&self) &String {
         &self.name
@@ -108,11 +104,9 @@ Data :: struct {
     }
 }
 
-extend Data with SayHello {
-    say_hello :: fn(&self) {
-        let suffix = '!'
-        print("Hello, {}{}", self.name, suffix)
-    }
+say_hello :: fn(self: *Data) {
+    let suffix = '!';
+    print("Hello, {}{}", self.name, suffix)
 }
 
 math :: fn(name: String, args: ..String) {

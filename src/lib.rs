@@ -1,76 +1,39 @@
-use std::fmt::{Debug, Display, Formatter};
+use std::ops::Range;
 
-pub mod compiler;
-pub mod error;
-pub mod lexer;
-pub mod parser;
+pub mod token;
 
-#[derive(Copy, Clone, Eq, PartialEq, Default)]
+/// Span representing a range of bytes in source code
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
-    start: usize,
-    end: usize,
+    /// Inclusive
+    pub(crate) start: usize,
+    /// Exclusive
+    pub(crate) end: usize
 }
 
 impl Span {
-    pub fn new(start: usize, end: usize) -> Span {
-        Span {
-            start,
-            end,
-        }
-    }
-
-    pub fn start(&self) -> usize {
-        self.start
-    }
-    pub fn end(&self) -> usize {
-        self.end
+    pub fn range(&self) -> Range<usize> {
+        (*self).into()
     }
 }
 
-impl Debug for Span {
+impl std::fmt::Debug for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f, "[{}..{}]",
-            self.start,
-            self.end
-        )
+        write!(f, "Span[{}..{}]", self.start, self.end)
     }
 }
 
-#[derive(Copy, Clone, Default)]
-pub struct Location {
-    pub line: usize,
-    pub column: usize,
-    pub span: Span,
-}
-
-impl Location {
-    pub fn new(line: usize, column: usize, span: Span) -> Location {
-        Location {
-            line,
-            column,
-            span,
+impl From<Range<usize>> for Span {
+    fn from(value: Range<usize>) -> Self {
+        Self {
+            start: value.start,
+            end: value.end,
         }
     }
 }
 
-impl Debug for Location {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{} {:?}", self.line, self.column, self.span)
+impl From<Span> for Range<usize> {
+    fn from(value: Span) -> Self {
+        value.start..value.end
     }
-}
-
-impl Display for Location {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.line, self.column)
-    }
-}
-
-pub fn first_positive(sizes: &[usize]) -> usize {
-    for size in sizes.iter() {
-        if *size > 0 {
-            return *size;
-        }
-    }
-    0
 }
