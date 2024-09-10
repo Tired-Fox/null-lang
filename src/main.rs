@@ -1,12 +1,12 @@
-use null::{lex::Tokenizer, source};
+use null::{error::Error, lex::Tokenizer, source};
 
-fn main() {
+fn main() -> Result<(), Error> {
     let src = r#"
 main :: fn() {
     // This is invalid... must contain a value.
-    ``
-    rune := '';
-    message := "hello, world!";
+    _ := "`";
+    rune := '\u{1F60AAA}';
+    message := "hello, world! \u{1F60A}";
     print(message)
 }
 "#;
@@ -14,9 +14,7 @@ main :: fn() {
     let tokenizer = Tokenizer::new(src);
 
     for token in tokenizer {
-        match token {
-            Ok(t) => println!("{t:?}"),
-            Err(e) => eprintln!("{:?}", e.with_source_code(source!("main.nl", src))),
-        }
+        println!("{:?}", token.map_err(|e| e.with_source_code(source!(src)))?)
     }
+    Ok(())
 }

@@ -1,8 +1,6 @@
-use std::str::FromStr;
+use std::{borrow::Cow, str::FromStr};
 
 use crate::Span;
-
-use super::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIs, strum::EnumProperty)]
 pub enum Keyword {
@@ -118,7 +116,7 @@ pub enum Operator {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
     String,
-    Rune,
+    Char(char),
     Number,
     Ident,
     Keyword(Keyword),
@@ -140,27 +138,28 @@ pub enum TokenKind {
     SingleQuote,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token<'input> {
     pub(crate) kind: TokenKind,
     pub(crate) span: Span,
-    pub(crate) repr: &'input str,
+    pub(crate) repr: Cow<'input, str>,
 }
 
-impl Token<'_> {
+impl<'input> Token<'input> {
     pub fn span(&self) -> Span {
         self.span 
     }
 
     pub fn repr(&self) -> &'_ str {
-        self.repr
+        self.repr.as_ref()
     }
 
     pub fn kind(&self) -> TokenKind {
         self.kind
     }
 
-    pub(crate) fn keyword(keyword: Keyword, repr: &'_ str, pos: usize) -> Token<'_> {
+    pub(crate) fn keyword(keyword: Keyword, repr: impl Into<Cow<'input, str>>, pos: usize) -> Token<'input> {
+        let repr: Cow<'_, str> = repr.into();
         Token {
             kind: TokenKind::Keyword(keyword),
             span: Span::from(pos-repr.len()..pos),
@@ -168,7 +167,8 @@ impl Token<'_> {
         }
     }
 
-    pub(crate) fn ident(repr: &'_ str, pos: usize) -> Token<'_> {
+    pub(crate) fn ident(repr: impl Into<Cow<'input, str>>, pos: usize) -> Token<'input> {
+        let repr: Cow<'_, str> = repr.into();
         Token {
             kind: TokenKind::Ident,
             span: Span::from(pos-repr.len()..pos),
@@ -176,7 +176,8 @@ impl Token<'_> {
         }
     }
 
-    pub(crate) fn operator(op: Operator, repr: &'_ str, pos: usize) -> Token<'_> {
+    pub(crate) fn operator(op: Operator, repr: impl Into<Cow<'input, str>>, pos: usize) -> Token<'input> {
+        let repr: Cow<'_, str> = repr.into();
         Token {
             kind: TokenKind::Operator(op),
             span: Span::from(pos-repr.len()..pos),
@@ -184,9 +185,19 @@ impl Token<'_> {
         }
     }
 
-    pub(crate) fn string(repr: &'_ str, pos: usize) -> Token<'_> {
+    pub(crate) fn string(repr: impl Into<Cow<'input, str>>, pos: usize) -> Token<'input> {
+        let repr: Cow<'_, str> = repr.into();
         Token {
             kind: TokenKind::String,
+            span: Span::from(pos-repr.len()-2..pos),
+            repr
+        }
+    }
+
+    pub(crate) fn char(value: char, repr: impl Into<Cow<'input, str>>, pos: usize) -> Token<'input> {
+        let repr: Cow<'_, str> = repr.into();
+        Token {
+            kind: TokenKind::Char(value),
             span: Span::from(pos-repr.len()-2..pos),
             repr
         }
@@ -196,7 +207,7 @@ impl Token<'_> {
         Token {
             kind,
             span: Span::from(pos..pos + 1),
-            repr: &src[pos..=pos],
+            repr: Cow::from(&src[pos..=pos]),
         }
     }
 }

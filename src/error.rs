@@ -177,7 +177,7 @@ impl std::fmt::Debug for Error {
                 "╭─".if_supports_color(Stream::Stderr, |text| text.fg::<Gray>()),
                 match src.name.as_deref() {
                     Some(name) => format!("{name}:{line}:{column}"),
-                    None => format!("{line}:{column}"),
+                    None => format!("??? {line}:{column}"),
                 },
             )?;
             
@@ -222,15 +222,21 @@ pub enum ErrorKind {
     Unkown,
     #[error("invalid syntax")]
     InvalidSyntax,
+    #[error("invalid escape sequence")]
+    InvalidEscapeSequence,
     #[error("unterminated string")]
     UnterminatedString,
+    #[error("unterminated char")]
+    UnterminatedChar,
 }
 impl ErrorKind {
     pub fn code(&self) -> usize {
         match self {
             Self::Unkown => 0,
             Self::InvalidSyntax => 1,
-            Self::UnterminatedString => 2,
+            Self::InvalidEscapeSequence => 2,
+            Self::UnterminatedString => 100,
+            Self::UnterminatedChar => 101,
         }
     }
 }
