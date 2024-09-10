@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+owo-colors = { version = "5.0.0", features = ["supports-color", "supports-colors"] }
 strum = { version = "0.26.3", features = ["derive"] }
+thiserror = "1.0.63"
 # nasm-to-string={ path="crates/nasm" }
 # lazy_static = { version = "1.4.0", features = [] }

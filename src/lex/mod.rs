@@ -1,12 +1,15 @@
 mod token;
-mod error;
 
-use std::{iter::Peekable, str::{Chars, FromStr}};
+use std::str::FromStr;
 
-use crate::Span;
+use crate::{
+    error,
+    source,
+    Span
+};
 use token::{Keyword, Operator};
 pub use token::{TokenKind, Token};
-pub use error::Error;
+use crate::error::{Error, ErrorKind};
 
 pub struct Tokenizer<'input> {
     src: &'input str,
@@ -44,8 +47,8 @@ impl<'input> Tokenizer<'input> {
     /// Slice of whitespace that was consumed
     fn consume_whitespace(&mut self) -> &'input str {
         let start = self.byte;
-        let mut chars = self.rest.chars();
-        while let Some(c) = chars.next() {
+        let chars = self.rest.chars();
+        for c in chars {
             match c {
                 ' ' | '\n' | '\r' => self.byte += c.len_utf8(),
                 _ => break
@@ -64,8 +67,8 @@ impl<'input> Tokenizer<'input> {
     /// Consumed identifier
     fn consume_ident(&mut self) -> &'input str {
         let start = self.byte;
-        let mut chars = self.rest.chars();
-        while let Some(c) = chars.next() {
+        let chars = self.rest.chars();
+        for c in chars {
             if !c.is_alphanumeric() {
                 break;
             }
@@ -153,19 +156,24 @@ impl<'input> Iterator for Tokenizer<'input> {
             ')' => self.advance(Token::single(TokenKind::CloseParenthesis, self.src, self.byte)),
             '{' => self.advance(Token::single(TokenKind::OpenBrace, self.src, self.byte)),
             '}' => self.advance(Token::single(TokenKind::CloseBrace, self.src, self.byte)),
-            // TODO: Parse a string token
-            '"' => self.advance(Token::single(TokenKind::DoubleQuote, self.src, self.byte)),
             // TODO: parse a rune/char token
             '\'' => self.advance(Token::single(TokenKind::SingleQuote, self.src, self.byte)),
+            // TODO: Parse a string token
+            '"' => self.advance(Token::single(TokenKind::DoubleQuote, self.src, self.byte)),
             // TODO: Parse a number token
-            '0'..='9' => Some(Err(Error::UnexpectedCharacter(c))),
+            '0'..='9' => {
+                self.byte += c.len_utf8();
+                self.rest = &self.src[self.byte..]; 
+                Some(Err(error!(ErrorKind::InvalidSyntax, (self.byte-c.len_utf8()..self.byte, "unexpected character"))))
+            },
             other => {
                 let start = self.byte;
                 if let Some(op) = self.consume_operator() {
                     return Some(Ok(Token::operator(op, &self.src[start..self.byte], self.byte)))
                 }
                 self.byte += other.len_utf8();
-                Some(Err(Error::UnexpectedCharacter(other)))
+                self.rest = &self.src[self.byte..];
+                Some(Err(error!(ErrorKind::InvalidSyntax, (self.byte-c.len_utf8()..self.byte, "unexpected character"))))
             }
         }
     }

@@ -17,6 +17,21 @@
 
 Custom programming language using rust and nasm along with linkers appropriate for the OS.
 
+## Crates
+
+- Miette: Error handling and reporting
+    - Alternatives: These are also what inspired miette. So Miette is all this combined.
+        * Ariadne
+        * Thiserror
+        * Anyhow
+        * owo_colors
+        * syntact
+    - Advantages:
+        - All the alternative crates features
+        - Add custom syntax highlighters through syntact
+        - Custom error output and formatting
+- Strum: Easy to use enum derives to better help enums drive state
+
 <!-- Footer Badges --!>
 
 <br>

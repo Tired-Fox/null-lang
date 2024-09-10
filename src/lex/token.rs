@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use crate::Span;
 
-use super::{Error, Tokenizer};
+use super::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIs, strum::EnumProperty)]
 pub enum Keyword {
@@ -19,7 +19,7 @@ pub enum Keyword {
 }
 
 impl FromStr for Keyword {
-    type Err = Error;
+    type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "fn" => Self::Fn,
@@ -31,7 +31,7 @@ impl FromStr for Keyword {
             "let" => Self::Let,
             "null" => Self::Null,
             "interface" => Self::Interface,
-            _ => return Err(Error::UnkownKeyword)
+            _ => return Err(())
         })
     }
 }
@@ -118,6 +118,7 @@ pub enum Operator {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
     String,
+    Rune,
     Number,
     Ident,
     Keyword(Keyword),
@@ -184,7 +185,7 @@ impl Token<'_> {
 mod test {
     use std::str::FromStr;
 
-    use crate::token::{token::Keyword, Error};
+    use crate::lex::token::Keyword;
 
     #[test]
     fn keyword_from_str() {
@@ -198,6 +199,6 @@ mod test {
         assert!(matches!(Keyword::from_str("null"), Ok(Keyword::Null)));
         assert!(matches!(Keyword::from_str("interface"), Ok(Keyword::Interface)));
 
-        assert!(matches!(Keyword::from_str("???"), Err(Error::UnkownKeyword)));
+        assert!(matches!(Keyword::from_str("???"), Err(())));
     }
 }

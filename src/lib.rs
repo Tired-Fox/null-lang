@@ -1,14 +1,43 @@
-use std::ops::Range;
+use std::{cmp::Ordering, ops::Range};
 
-pub mod token;
+pub mod lex;
+pub mod error;
+
+#[macro_export]
+macro_rules! error {
+    ($kind: expr) => {
+        $crate::error::Error::error($kind, None) 
+    };
+    ($kind: expr, $label: expr) => {
+        $crate::error::Error::error($kind, Some($label.into())) 
+    };
+}
+
+#[macro_export]
+macro_rules! warn {
+    ($kind: expr) => {
+        $crate::error::Error::warn($crate::error::ErrorKind::$kind, []) 
+    };
+    ($kind: expr, [$($label: expr),+]) => {
+        $crate::error::Error::warn($crate::error::ErrorKind::$kind, [$($label.into(),)+]) 
+    };
+}
 
 /// Span representing a range of bytes in source code
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     /// Inclusive
-    pub(crate) start: usize,
+    pub start: usize,
     /// Exclusive
-    pub(crate) end: usize
+    pub end: usize
+}
+impl PartialOrd for Span {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(match self.start.cmp(&other.start) {
+            Ordering::Equal => self.end.cmp(&other.end),
+            other => other
+        })
+    }
 }
 
 impl Span {
