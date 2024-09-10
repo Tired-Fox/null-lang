@@ -115,6 +115,8 @@ pub enum Operator {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
+    DocComment,
+    Comment,
     String,
     Char(char),
     Number,

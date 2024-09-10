@@ -2,14 +2,9 @@ mod token;
 
 use std::str::FromStr;
 
-use crate::{
-    error,
-    source,
-    Span
-};
 use token::{Keyword, Operator};
 pub use token::{TokenKind, Token};
-use crate::error::{Error, ErrorKind};
+use crate::{Error, ErrorKind, error};
 
 pub struct Tokenizer<'input> {
     src: &'input str,
@@ -189,18 +184,18 @@ impl<'input> Tokenizer<'input> {
                         }
 
                         if buffer.len() < 2 {
-                            return Err(error!(ErrorKind::InvalidEscapeSequence, (self.byte-buffer.len()-1..self.byte-1, "hex must be 2 digits or more")))
+                            return Err(error!(ErrorKind::InvalidEscapeSequence, (self.byte-buffer.len()-1..self.byte-1, "must be a 2 digits or more")))
                         }
 
                         if buffer.len() > 6 {
-                            return Err(error!(ErrorKind::InvalidEscapeSequence, (self.byte-buffer.len()-1..self.byte-1, "hex must be 6 digits or less")))
+                            return Err(error!(ErrorKind::InvalidEscapeSequence, (self.byte-buffer.len()-1..self.byte-1, "must be 6 digits or less")))
                         }
 
                         let digit = u32::from_str_radix(buffer.as_str(), 16).map_err(|_| {
                             error!(ErrorKind::InvalidEscapeSequence, (self.byte-2..self.byte-1, "must be a valid hex digit"))
                         })?;
                         char::from_u32(digit)
-                            .ok_or(error!(ErrorKind::InvalidEscapeSequence, (self.byte-buffer.len()-1..self.byte-1, "hex must be a valid unicode character")))?
+                            .ok_or(error!(ErrorKind::InvalidEscapeSequence, (self.byte-buffer.len()-1..self.byte-1, "must be a valid unicode character")))?
                     },
                     'x' => {
                         let a = match chars.next() {
@@ -221,7 +216,7 @@ impl<'input> Tokenizer<'input> {
                                             error!(ErrorKind::InvalidEscapeSequence, (self.byte-2..self.byte, "must be a valid hex digit"))
                                         })?;
                                         char::from_u32(digit)
-                                            .ok_or(error!(ErrorKind::InvalidEscapeSequence, (self.byte-2..self.byte, "hex must be a valid ansi character")))?
+                                            .ok_or(error!(ErrorKind::InvalidEscapeSequence, (self.byte-2..self.byte, "must be a valid ansi character")))?
                                     },
                                     _ => return Err(error!(ErrorKind::InvalidEscapeSequence, (start..self.byte, "must be 2 hex digits")))
                                 }
@@ -291,6 +286,93 @@ impl<'input> Tokenizer<'input> {
         }
     }
 
+    /// Move the pointer forward consuming a comment
+    ///
+    /// Assumes that the current character is a `/`
+    ///
+    /// # Returns
+    ///
+    /// Consumed comment, doccomment, or divide operator
+    fn consume_comment(&mut self) -> Option<Result<Token<'input>, Error>> {
+        let mut chars = self.rest.chars();
+        let c = chars.next().unwrap();
+        self.inc(c);
+
+        let mut chars = self.rest.chars();
+        let c = match chars.next() {
+            Some(v) => v,
+            None => return self.advance(Token::single(TokenKind::Operator(Operator::Divide), &self.src[self.byte-1..self.byte], self.byte)),
+        };
+
+        match c {
+            '/' => {
+                self.inc(c);
+
+                let start = self.byte;
+                while let Some(c) = chars.next() {
+                    self.inc(c);
+                    match c {
+                        '\n' => break,
+                        _ => {}
+                    }
+                }
+
+                let repr = &self.src[start..self.byte-1];
+                if repr.starts_with("/") {
+                    return Some(Ok(Token {
+                        kind: TokenKind::DocComment,
+                        span: (start+1..self.byte-1).into(),
+                        repr: (&repr[1..]).into()
+                    }))
+                } else {
+                    return Some(Ok(Token {
+                        kind: TokenKind::Comment,
+                        span: (start..self.byte-1).into(),
+                        repr: repr.into()
+                    }))
+                }
+            },
+            '*' => {
+                self.inc(c);
+
+                let start = self.byte;
+                let mut escaped = false;
+                let mut star = false;
+
+                while let Some(c) = chars.next() {
+                    self.inc(c);
+                    match c {
+                        '\\' if !escaped => escaped = true,
+                        '*' if !escaped => star = true,
+                        '/' if !escaped && star => break,
+                        _ => {
+                            escaped = false;
+                            star = false;
+                        },
+                    }
+                }
+
+                let repr = &self.src[start..self.byte-2];
+                if repr.starts_with("*") {
+                    return Some(Ok(Token {
+                        kind: TokenKind::DocComment,
+                        span: (start+1..self.byte-1).into(),
+                        repr: (&repr[1..]).into()
+                    }))
+                } else {
+                    return Some(Ok(Token {
+                        kind: TokenKind::Comment,
+                        span: (start..self.byte-2).into(),
+                        repr: repr.into()
+                    }))
+                }
+            },
+            _ => {},
+        }
+
+        self.advance(Token::single(TokenKind::Operator(Operator::Divide), &self.src[self.byte-1..self.byte], self.byte))
+    }
+
     /// Advance the pointer given a token
     fn advance(&mut self, token: Token<'input>) -> Option<Result<Token<'input>, Error>> {
         self.byte += token.repr.len();
@@ -317,7 +399,9 @@ impl<'input> Iterator for Tokenizer<'input> {
                 }))
             },
             ':' => self.advance(Token::single(TokenKind::Colon, self.src, self.byte)),
+            // TODO: parse comment. Otherwise invalid character
             '\\' => self.advance(Token::single(TokenKind::Slash, self.src, self.byte)),
+            '/' => self.consume_comment(),
             ',' => self.advance(Token::single(TokenKind::Comma, self.src, self.byte)),
             '?' => self.advance(Token::single(TokenKind::Question, self.src, self.byte)),
             ';' => self.advance(Token::single(TokenKind::Semicolon, self.src, self.byte)),

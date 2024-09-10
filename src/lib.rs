@@ -1,25 +1,27 @@
 use std::{cmp::Ordering, ops::Range};
 
 pub mod lex;
-pub mod error;
+mod error;
+
+pub use error::{Error, ErrorKind, Source, Label};
 
 #[macro_export]
 macro_rules! error {
     ($kind: expr) => {
-        $crate::error::Error::error($kind, None) 
+        $crate::Error::error($kind, None) 
     };
     ($kind: expr, $label: expr) => {
-        $crate::error::Error::error($kind, Some($label.into())) 
+        $crate::Error::error($kind, Some($label.into())) 
     };
 }
 
 #[macro_export]
 macro_rules! warn {
     ($kind: expr) => {
-        $crate::error::Error::warn($crate::error::ErrorKind::$kind, []) 
+        $crate::Error::warn($crate::error::ErrorKind::$kind, []) 
     };
     ($kind: expr, [$($label: expr),+]) => {
-        $crate::error::Error::warn($crate::error::ErrorKind::$kind, [$($label.into(),)+]) 
+        $crate::Error::warn($crate::error::ErrorKind::$kind, [$($label.into(),)+]) 
     };
 }
 

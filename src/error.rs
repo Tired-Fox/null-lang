@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::cmp::Ordering;
 
 use owo_colors::{colors::xterm::Gray, OwoColorize, Stream, Style};
 
@@ -244,9 +244,9 @@ impl ErrorKind {
 #[macro_export]
 macro_rules! source {
     ($src:expr) => {
-        $crate::error::Source::new(None::<String>, $src)
+        $crate::Source::new(None::<String>, $src)
     };
     ($path: expr, $src:expr) => {
-        $crate::error::Source::new(Some($path), $src)
+        $crate::Source::new(Some($path), $src)
     };
 }
