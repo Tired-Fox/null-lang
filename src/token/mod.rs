@@ -1,23 +1,25 @@
 mod token;
 mod error;
 
-use std::str::FromStr;
+use std::{iter::Peekable, str::{Chars, FromStr}};
 
 use crate::Span;
-use token::Keyword;
+use token::{Keyword, Operator};
 pub use token::{TokenKind, Token};
 pub use error::Error;
 
 pub struct Tokenizer<'input> {
     src: &'input str,
-    pointer: usize,
+    rest: &'input str,
+    byte: usize,
 }
 
 impl<'input> Tokenizer<'input> {
     pub fn new(src: &'input str) -> Self {
         Self {
             src,
-            pointer: 0,
+            rest: &src[..1],
+            byte: 0,
         }
     }
 
@@ -25,18 +27,14 @@ impl<'input> Tokenizer<'input> {
     /// 
     /// `Zero Indexed`
     pub fn line(&self) -> usize {
-        self.src[..self.pointer].lines().count()
+        self.src[..self.byte].lines().count()
     }
 
     /// Get the current column of the source the tokenizer is processing
     /// 
     /// `Zero Indexed`
     pub fn column(&self) -> usize {
-        self.src[..self.pointer].rsplit_once('\n').unwrap().1.len()
-    }
-
-    pub fn current(&self) -> char {
-        self.src[self.pointer..=self.pointer].chars().next().unwrap()
+        self.src[..self.byte].rsplit_once('\n').unwrap().1.len()
     }
 
     /// Move the pointer forward consuming all whitespace
@@ -45,15 +43,16 @@ impl<'input> Tokenizer<'input> {
     ///
     /// Slice of whitespace that was consumed
     fn consume_whitespace(&mut self) -> &'input str {
-        let start = self.pointer;
-        while self.pointer < self.src.len() {
-            match self.current() {
-                // Whitespace
-                ' ' | '\n' | '\r' => self.pointer += 1,
-                _ => break,
+        let start = self.byte;
+        let mut chars = self.rest.chars();
+        while let Some(c) = chars.next() {
+            match c {
+                ' ' | '\n' | '\r' => self.byte += c.len_utf8(),
+                _ => break
             }
         }
-        &self.src[start..self.pointer]
+        self.rest = &self.src[self.byte..];
+        &self.src[start..self.byte]
     }
 
     /// Move the pointer foward consuming an identifier
@@ -64,14 +63,64 @@ impl<'input> Tokenizer<'input> {
     ///
     /// Consumed identifier
     fn consume_ident(&mut self) -> &'input str {
-        let start = self.pointer;
-        while self.pointer < self.src.len() {
-            if !self.current().is_alphanumeric() {
+        let start = self.byte;
+        let mut chars = self.rest.chars();
+        while let Some(c) = chars.next() {
+            if !c.is_alphanumeric() {
                 break;
             }
-            self.pointer += 1;
+            self.byte += c.len_utf8();
         }
-        &self.src[start..self.pointer]
+        self.rest = &self.src[self.byte..];
+        &self.src[start..self.byte]
+    }
+
+    /// Match a list of options of operators and return the first match progressing the pointer
+    /// if there is a match
+    fn one_of<const N: usize>(&mut self, options: [(&str, Operator); N], default: Operator) -> Operator {
+        for (option, op) in options {
+            if self.byte + option.len() < self.src.len() && &self.src[self.byte..self.byte + option.len()] == option {
+                self.byte += option.len();
+                self.rest = &self.src[self.byte..];
+                return op;
+            }
+        }
+        self.byte += 1;
+        self.rest = &self.src[self.byte..];
+        default
+    }
+
+    /// Move the pointer forward consuming an operator
+    /// 
+    /// # Returns
+    /// 
+    /// Consumed operator
+    fn consume_operator(&mut self) -> Option<Operator> {
+        let c = self.rest.chars().next()?;
+        match c {
+            '+' => Some(self.one_of([("+=", Operator::PlusEqual)], Operator::Plus)),
+            '-' => Some(self.one_of([("-=", Operator::MinusEqual)], Operator::Minus)),
+            '*' => Some(self.one_of([("*=", Operator::MultiplyEqual)], Operator::Multiply)),
+            '/' =>  Some(self.one_of([("/=", Operator::DivideEqual)], Operator::Divide)),
+            '=' =>  Some(self.one_of([("==", Operator::EqualEqual)], Operator::Equal)),
+            '%' =>  Some(self.one_of([("%=", Operator::ModuloEqual)], Operator::Modulo)),
+            '&' =>  Some(self.one_of([("&=", Operator::AndEqual)], Operator::And)),
+            '|' =>  Some(self.one_of([("||", Operator::LogicalOr), ("|=", Operator::OrEqual)], Operator::Or)),
+            '!' =>  Some(self.one_of([("!=", Operator::BangEqual)], Operator::Bang)),
+            '^' =>  Some(self.one_of([("^=", Operator::XorEqual)], Operator::Xor)),
+            '~' =>  Some(self.one_of([("~=", Operator::NotEqual)], Operator::Not)),
+            '<' =>  Some(self.one_of([("<<=", Operator::ShiftLeftEqual), ("<<", Operator::ShiftLeft), ("<=", Operator::LessThanEqual)], Operator::LessThan)),
+            '>' =>  Some(self.one_of([(">>=", Operator::ShiftRightEqual), (">>", Operator::ShiftRight), (">=", Operator::GreaterThanEqual)], Operator::GreaterThan)),
+            '.' =>  Some(self.one_of([("..", Operator::DotDot), ("..=", Operator::DotDotEqual)], Operator::Dot)),
+            _ => None,
+        }
+    }
+
+    /// Advance the pointer given a token
+    fn advance(&mut self, token: Token<'input>) -> Option<Result<Token<'input>, Error>> {
+        self.byte += token.repr.len();
+        self.rest = &self.src[self.byte..];
+        Some(Ok(token))
     }
 }
 
@@ -79,25 +128,44 @@ impl<'input> Iterator for Tokenizer<'input> {
     type Item = Result<Token<'input>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.pointer >= self.src.len() {
-            return None;
-        }
-
         // Consume any leading whitespace
         self.consume_whitespace();
 
-        match self.current() {
+        let c = self.rest.chars().next()?;
+        self.rest = &self.src[self.byte..];
+
+        match c {
             'a'..='z' | 'A'..='Z' | '_' => {
                 let ident = self.consume_ident();
                 Some(Ok(match Keyword::from_str(ident) {
-                    Ok(kw) => Token::keyword(kw, ident, self.pointer),
-                    Err(_) => Token::ident(ident, self.pointer)
+                    Ok(kw) => Token::keyword(kw, ident, self.byte),
+                    Err(_) => Token::ident(ident, self.byte)
                 }))
             },
-            next => {
-                println!("Delim({next})");
-                self.pointer += 1;
-                None
+            ':' => self.advance(Token::single(TokenKind::Colon, self.src, self.byte)),
+            '\\' => self.advance(Token::single(TokenKind::Slash, self.src, self.byte)),
+            ',' => self.advance(Token::single(TokenKind::Comma, self.src, self.byte)),
+            '?' => self.advance(Token::single(TokenKind::Question, self.src, self.byte)),
+            ';' => self.advance(Token::single(TokenKind::Semicolon, self.src, self.byte)),
+            '[' => self.advance(Token::single(TokenKind::OpenBracket, self.src, self.byte)),
+            ']' => self.advance(Token::single(TokenKind::CloseBracket, self.src, self.byte)),
+            '(' => self.advance(Token::single(TokenKind::OpenParenthesis, self.src, self.byte)),
+            ')' => self.advance(Token::single(TokenKind::CloseParenthesis, self.src, self.byte)),
+            '{' => self.advance(Token::single(TokenKind::OpenBrace, self.src, self.byte)),
+            '}' => self.advance(Token::single(TokenKind::CloseBrace, self.src, self.byte)),
+            // TODO: Parse a string token
+            '"' => self.advance(Token::single(TokenKind::DoubleQuote, self.src, self.byte)),
+            // TODO: parse a rune/char token
+            '\'' => self.advance(Token::single(TokenKind::SingleQuote, self.src, self.byte)),
+            // TODO: Parse a number token
+            '0'..='9' => Some(Err(Error::UnexpectedCharacter(c))),
+            other => {
+                let start = self.byte;
+                if let Some(op) = self.consume_operator() {
+                    return Some(Ok(Token::operator(op, &self.src[start..self.byte], self.byte)))
+                }
+                self.byte += other.len_utf8();
+                Some(Err(Error::UnexpectedCharacter(other)))
             }
         }
     }

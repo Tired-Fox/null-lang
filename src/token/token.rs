@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use crate::Span;
 
-use super::Error;
+use super::{Error, Tokenizer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIs, strum::EnumProperty)]
 pub enum Keyword {
@@ -49,9 +49,7 @@ pub enum Operator {
     /// `=`
     Equal,
     /// `%`
-    Modulus,
-    /// `\`
-    Shash,
+    Modulo,
     /// `&`
     And,
     /// `|`
@@ -70,15 +68,21 @@ pub enum Operator {
     ShiftRight,
     /// '.'
     Dot,
-    /// `?`
-    Question,
+    /// `<`
+    LessThan,
+    /// `>`
+    GreaterThan,
+    /// `<=`
+    LessThanEqual,
+    /// `>=`
+    GreaterThanEqual,
 
     /// ==
     EqualEqual,
     /// !=
     BangEqual,
     /// %=
-    ModulusEqual,
+    ModuloEqual,
     /// &=
     AndEqual,
     /// *=
@@ -92,15 +96,23 @@ pub enum Operator {
     /// /=
     DivideEqual,
     /// <<=
-    LeftShiftEqual,
+    ShiftLeftEqual,
     /// >>=
-    RightShiftEqual,
+    ShiftRightEqual,
     /// =>
     EqualGreaterThan,
     /// '..'
     DotDot,
-    /// ..=
+    /// `..=`
     DotDotEqual,
+    /// `||`
+    LogicalOr,
+    /// `&&`
+    LogicalAnd,
+    /// `|=`
+    OrEqual,
+    /// `^=`
+    XorEqual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,17 +129,25 @@ pub enum TokenKind {
     CloseBracket,
     OpenBrace,
     CloseBrace,
+
+    Comma,
+    Colon,
+    Question,
+    Slash,
+    Semicolon,
+    DoubleQuote,
+    SingleQuote,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Token<'input> {
-    kind: TokenKind,
-    span: Span,
-    repr: &'input str,
+    pub(crate) kind: TokenKind,
+    pub(crate) span: Span,
+    pub(crate) repr: &'input str,
 }
 
 impl Token<'_> {
-    pub fn keyword(keyword: Keyword, repr: &'_ str, pos: usize) -> Token<'_> {
+    pub(crate) fn keyword(keyword: Keyword, repr: &'_ str, pos: usize) -> Token<'_> {
         Token {
             kind: TokenKind::Keyword(keyword),
             span: Span::from(pos-repr.len()..pos),
@@ -135,11 +155,27 @@ impl Token<'_> {
         }
     }
 
-    pub fn ident(repr: &'_ str, pos: usize) -> Token<'_> {
+    pub(crate) fn ident(repr: &'_ str, pos: usize) -> Token<'_> {
         Token {
             kind: TokenKind::Ident,
             span: Span::from(pos-repr.len()..pos),
             repr
+        }
+    }
+
+    pub(crate) fn operator(op: Operator, repr: &'_ str, pos: usize) -> Token<'_> {
+        Token {
+            kind: TokenKind::Operator(op),
+            span: Span::from(pos-repr.len()..pos),
+            repr
+        }
+    }
+
+    pub(crate) fn single(kind: TokenKind, src: &'_ str, pos: usize) -> Token<'_> {
+        Token {
+            kind,
+            span: Span::from(pos..pos + 1),
+            repr: &src[pos..=pos],
         }
     }
 }
