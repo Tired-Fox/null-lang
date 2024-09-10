@@ -94,6 +94,34 @@ impl<'input> Tokenizer<'input> {
     }
 
     /// Move the pointer forward consuming an operator
+    ///
+    /// Assume that the current char is `"` and that check has already been done.
+    ///
+    /// # Returns
+    ///
+    /// Consumed string
+    fn consume_string(&mut self) -> Result<Token<'input>, Error> {
+        let mut chars = self.rest.chars();
+        self.byte += chars.next().unwrap().len_utf8();
+
+        let start = self.byte;
+        let mut escaped = true;
+
+        loop {
+            let c = chars.next().ok_or(error!(ErrorKind::UnterminatedString, start..start))?;
+            self.byte += c.len_utf8();
+            self.rest = &self.src[self.byte..];
+            match c {
+                '\\' if !escaped => escaped = true,
+                '"' if !escaped => break,
+                _ => escaped = false,
+            }
+        }
+
+        Ok(Token::string(&self.src[start..self.byte-1], self.byte))
+    }
+
+    /// Move the pointer forward consuming an operator
     /// 
     /// # Returns
     /// 
@@ -158,8 +186,7 @@ impl<'input> Iterator for Tokenizer<'input> {
             '}' => self.advance(Token::single(TokenKind::CloseBrace, self.src, self.byte)),
             // TODO: parse a rune/char token
             '\'' => self.advance(Token::single(TokenKind::SingleQuote, self.src, self.byte)),
-            // TODO: Parse a string token
-            '"' => self.advance(Token::single(TokenKind::DoubleQuote, self.src, self.byte)),
+            '"' => Some(self.consume_string()),
             // TODO: Parse a number token
             '0'..='9' => {
                 self.byte += c.len_utf8();

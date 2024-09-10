@@ -148,6 +148,18 @@ pub struct Token<'input> {
 }
 
 impl Token<'_> {
+    pub fn span(&self) -> Span {
+        self.span 
+    }
+
+    pub fn repr(&self) -> &'_ str {
+        self.repr
+    }
+
+    pub fn kind(&self) -> TokenKind {
+        self.kind
+    }
+
     pub(crate) fn keyword(keyword: Keyword, repr: &'_ str, pos: usize) -> Token<'_> {
         Token {
             kind: TokenKind::Keyword(keyword),
@@ -168,6 +180,14 @@ impl Token<'_> {
         Token {
             kind: TokenKind::Operator(op),
             span: Span::from(pos-repr.len()..pos),
+            repr
+        }
+    }
+
+    pub(crate) fn string(repr: &'_ str, pos: usize) -> Token<'_> {
+        Token {
+            kind: TokenKind::String,
+            span: Span::from(pos-repr.len()-2..pos),
             repr
         }
     }

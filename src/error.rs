@@ -183,11 +183,6 @@ impl std::fmt::Debug for Error {
             
             let msg = label.message();
             let remain = end.1.saturating_sub(1).saturating_sub(start.1);
-            let (left, right) = if remain == 0 {
-                (0, 0)
-            } else {
-                (remain / 2, remain - (remain/2))
-            };
 
             // TODO: Multi line span
 
@@ -196,19 +191,17 @@ impl std::fmt::Debug for Error {
                 start.0,
                 &line[..end.1.saturating_add(10).min(line.len())],
             )?;
-            write!(f, "\n{spacer} {then} {}{}{}{}",
-                (0..end.1-2).map(|_| ' ').collect::<String>(),
-                (0..left).map(|_| '─').collect::<String>().if_supports_color(Stream::Stderr, |text| text.style(color)),
+            write!(f, "\n{spacer} {then} {}{}{}",
+                (0..start.1-1).map(|_| ' ').collect::<String>(),
                 match msg {
                     Some(_) => '┬',
                     None => '─',
                 }.if_supports_color(Stream::Stderr, |text| text.style(color)),
-                (0..right).map(|_| '─').collect::<String>().if_supports_color(Stream::Stderr, |text| text.style(color)),
+                (0..remain).map(|_| '─').collect::<String>().if_supports_color(Stream::Stderr, |text| text.style(color)),
             )?;
             if let Some(msg) = msg {
-                write!(f, "\n{spacer} {then} {}{}{} {}",
-                    (0..end.1-2).map(|_| ' ').collect::<String>(),
-                    (0..left).map(|_| ' ').collect::<String>(),
+                write!(f, "\n{spacer} {then} {}{} {}",
+                    (0..start.1-1).map(|_| ' ').collect::<String>(),
                     "╰─".if_supports_color(Stream::Stderr, |text| text.style(color)),
                     msg
                 )?;
@@ -229,12 +222,15 @@ pub enum ErrorKind {
     Unkown,
     #[error("invalid syntax")]
     InvalidSyntax,
+    #[error("unterminated string")]
+    UnterminatedString,
 }
 impl ErrorKind {
     pub fn code(&self) -> usize {
         match self {
             Self::Unkown => 0,
-            Self::InvalidSyntax { .. } => 1,
+            Self::InvalidSyntax => 1,
+            Self::UnterminatedString => 2,
         }
     }
 }
