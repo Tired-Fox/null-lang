@@ -1,6 +1,7 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::Range};
 
-use owo_colors::{colors::xterm::Gray, OwoColorize, Stream, Style};
+use codesnake::{Block, CodeWidth, LineIndex};
+use owo_colors::{OwoColorize, Stream, Style};
 
 use crate::Span; 
 
@@ -24,6 +25,16 @@ impl Label {
 
     pub fn message(&self) -> Option<&str> {
         self.msg.as_deref()
+    }
+}
+
+impl From<&Label> for codesnake::Label<Range<usize>, String> {
+    fn from(value: &Label) -> Self {
+        let range = value.span().range();
+        match value.msg.as_ref() {
+            Some(msg) => codesnake::Label::new(range).with_text(msg.clone()),
+            None => codesnake::Label::new(range)
+        }
     }
 }
 
@@ -81,16 +92,16 @@ impl Source {
     /// Get the line and column number of where the span starts
     pub fn start_pos(&self, span: Span) -> (usize, usize) {
         (
-            self.source[..span.start].lines().count(),
-            self.source[..span.start].rsplit_once('\n').unwrap().1.len() + 1
+            self.source[..=span.start].lines().count().max(1),
+            self.source[..=span.start].rsplit_once('\n').map(|v| v.1.len()).unwrap_or(1)
         )
     }
 
     /// Get the line and column number of where the span ends
     pub fn end_pos(&self, span: Span) -> (usize, usize) {
         (
-            self.source[..span.end].lines().count(),
-            self.source[..span.end].rsplit_once('\n').unwrap().1.len() + 1
+            self.source[..span.end].lines().count().max(1),
+            self.source[..span.end].rsplit_once('\n').map(|v| v.1.len() + 1).unwrap_or(1)
         )
     }
 
@@ -103,7 +114,7 @@ impl Source {
     }
 
     pub fn line(&self, line: usize) -> Option<&str> {
-        self.source.lines().nth(line)
+        self.source.lines().nth(line.saturating_sub(1))
     }
 }
 
@@ -112,24 +123,24 @@ impl Source {
 pub struct Error {
     kind: ErrorKind,
     level: Severity,
-    label: Option<Label>,
+    labels: Vec<Label>,
     src: Option<Source>,
 }
 
 impl Error {
-    pub fn error(kind: ErrorKind, label: Option<Label>) -> Self {
+    pub fn error(kind: ErrorKind, labels: impl IntoIterator<Item=Label>) -> Self {
         Self {
             kind,
-            label,
+            labels: labels.into_iter().collect(),
             ..Default::default()
         }
     }
 
-    pub fn warn(kind: ErrorKind, label: Option<Label>) -> Self {
+    pub fn warn(kind: ErrorKind, labels: impl IntoIterator<Item=Label>) -> Self {
         Self {
             kind,
             level: Severity::Warning,
-            label,
+            labels: labels.into_iter().collect(),
             ..Default::default()
         }
     }
@@ -162,54 +173,31 @@ impl std::fmt::Debug for Error {
         };
 
         write!(f, "{}", self.if_supports_color(Stream::Stderr, |text| text.bold()))?;
-        if let (Some(src), Some(label)) = (self.source_code(), self.label.as_ref()) {
-            let (line, column) = src.start_pos(label.span());
-            
-            let [start, end] = src.pos(label.span());
-            let lines = (start.0..=end.0).map(|v| src.line(v.saturating_sub(1)).unwrap()).collect::<Vec<_>>();
-            let line_num_width = format!("{}", end.0).len();
 
-            let then = '┊'.if_supports_color(Stream::Stderr, |text| text.fg::<Gray>()).to_string();
-            let sep = '│'.if_supports_color(Stream::Stderr, |text| text.fg::<Gray>()).to_string();
-            let spacer = (0..line_num_width).map(|_| ' ').collect::<String>();
 
-            write!(f, "\n{spacer} {} {}",
-                "╭─".if_supports_color(Stream::Stderr, |text| text.fg::<Gray>()),
-                match src.name.as_deref() {
-                    Some(name) => format!("{name}:{line}:{column}"),
-                    None => format!("??? {line}:{column}"),
-                },
-            )?;
-            
-            let msg = label.message();
-            let remain = end.1.saturating_sub(1).saturating_sub(start.1);
+        if let (Some(src), false) = (self.source_code(), self.labels.is_empty()) {
+            let idx = LineIndex::new(src.source.as_str());
+            let block = Block::new(
+                &idx,
+                self.labels
+                    .iter()
+                    .map(|label| {
+                        codesnake::Label::from(label).with_style(move |t| t.style(color).to_string())
+                    })
+            )
+                .unwrap()
+                .map_code(|c| CodeWidth::new(c, c.len()));
 
-            // TODO: Multi line span
+            let mut labels = self.labels.iter().map(|l| l.span()).collect::<Vec<_>>();
+            labels.sort();
 
-            let line = lines.first().unwrap();
-            write!(f, "\n{} {sep} {}",
-                start.0,
-                &line[..end.1.saturating_add(10).min(line.len())],
-            )?;
-            write!(f, "\n{spacer} {then} {}{}{}",
-                (0..start.1-1).map(|_| ' ').collect::<String>(),
-                match msg {
-                    Some(_) => '┬',
-                    None => '─',
-                }.if_supports_color(Stream::Stderr, |text| text.style(color)),
-                (0..remain).map(|_| '─').collect::<String>().if_supports_color(Stream::Stderr, |text| text.style(color)),
-            )?;
-            if let Some(msg) = msg {
-                write!(f, "\n{spacer} {then} {}{} {}",
-                    (0..start.1-1).map(|_| ' ').collect::<String>(),
-                    "╰─".if_supports_color(Stream::Stderr, |text| text.style(color)),
-                    msg
-                )?;
-            }
-
-            write!(f, "\n{spacer} {}",
-                "╰─".if_supports_color(Stream::Stderr, |text| text.fg::<Gray>()),
-            )?;
+            let (line, column) = src.start_pos(*labels.first().unwrap());
+            writeln!(f, "\n{} {}", block.prologue(), match src.name.as_deref() {
+                Some(name) => format!("{name}:{line}:{column}"),
+                None => format!("??? {line}:{column}"),
+            })?;
+            write!(f, "{block}")?;
+            writeln!(f, "{}", block.epilogue())?;
         }
         writeln!(f)
     }
@@ -248,5 +236,25 @@ macro_rules! source {
     };
     ($path: expr, $src:expr) => {
         $crate::Source::new(Some($path), $src)
+    };
+}
+
+#[macro_export]
+macro_rules! error {
+    ($kind: expr) => {
+        $crate::Error::error($kind, []) 
+    };
+    ($kind: expr, [$($label: expr),+ $(,)?] $(,)?) => {
+        $crate::Error::error($kind, [$($label.into(),)+]) 
+    };
+}
+
+#[macro_export]
+macro_rules! warn {
+    ($kind: expr) => {
+        $crate::Error::warn($kind, []) 
+    };
+    ($kind: expr, [$($label: expr),+ $(,)?] $(,)?) => {
+        $crate::Error::warn($kind, [$($label.into(),)+]) 
     };
 }

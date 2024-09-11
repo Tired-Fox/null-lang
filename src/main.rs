@@ -1,4 +1,4 @@
-use null::{Error, lex::Tokenizer, source};
+use null::{lex::Tokenizer, source, Error};
 
 fn main() -> Result<(), Error> {
     let src = r#"

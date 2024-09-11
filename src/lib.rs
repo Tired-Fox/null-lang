@@ -5,26 +5,6 @@ mod error;
 
 pub use error::{Error, ErrorKind, Source, Label};
 
-#[macro_export]
-macro_rules! error {
-    ($kind: expr) => {
-        $crate::Error::error($kind, None) 
-    };
-    ($kind: expr, $label: expr) => {
-        $crate::Error::error($kind, Some($label.into())) 
-    };
-}
-
-#[macro_export]
-macro_rules! warn {
-    ($kind: expr) => {
-        $crate::Error::warn($crate::error::ErrorKind::$kind, []) 
-    };
-    ($kind: expr, [$($label: expr),+]) => {
-        $crate::Error::warn($crate::error::ErrorKind::$kind, [$($label.into(),)+]) 
-    };
-}
-
 /// Span representing a range of bytes in source code
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -33,12 +13,17 @@ pub struct Span {
     /// Exclusive
     pub end: usize
 }
-impl PartialOrd for Span {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(match self.start.cmp(&other.start) {
+impl Ord for Span {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.start.cmp(&other.start) {
             Ordering::Equal => self.end.cmp(&other.end),
             other => other
-        })
+        }
+    }
+}
+impl PartialOrd for Span {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

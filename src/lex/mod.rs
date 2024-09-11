@@ -144,12 +144,12 @@ impl<'input> Tokenizer<'input> {
         let start = self.byte;
         let mut chars = self.rest.chars();
 
-        let c = chars.next().ok_or(error!(unterminated, beginning..beginning))?;
+        let c = chars.next().ok_or(error!(unterminated, [beginning..beginning]))?;
         self.inc(c);
 
         let value = match c {
             '\\' => {
-                let c = chars.next().ok_or(error!(ErrorKind::InvalidEscapeSequence, start..start))?;
+                let c = chars.next().ok_or(error!(ErrorKind::InvalidEscapeSequence, [start..start]))?;
                 self.inc(c);
                 match c {
                     '\'' => '\'',
@@ -159,17 +159,17 @@ impl<'input> Tokenizer<'input> {
                     '\\' => '\\',
                     '0' => '\0',
                     'u' => {
-                        let a = chars.next().ok_or(error!(ErrorKind::InvalidEscapeSequence, start..start))?;
+                        let a = chars.next().ok_or(error!(ErrorKind::InvalidEscapeSequence, [start..start]))?;
                         self.inc(a);
                         if a != '{' {
-                            return Err(error!(ErrorKind::InvalidEscapeSequence, (start..self.byte-1, "unicode escape must have the format `\\u{hex}`")));
+                            return Err(error!(ErrorKind::InvalidEscapeSequence, [(start..self.byte-1, "unicode escape must have the format `\\u{hex}`")]));
                         }
 
                         let mut buffer = String::new();
                         loop {
                             let a = match chars.next() {
                                 Some(v) => v,
-                                None => return Err(error!(ErrorKind::InvalidEscapeSequence, start..start))
+                                None => return Err(error!(ErrorKind::InvalidEscapeSequence, [start..start]))
                             };
                             self.inc(a);
                             match a {
@@ -178,53 +178,53 @@ impl<'input> Tokenizer<'input> {
                                 },
                                 '}' => break,
                                 _ => {
-                                    return Err(error!(ErrorKind::InvalidEscapeSequence, (start..self.byte, "unicode escape must have the format `\\u{hex}`")));
+                                    return Err(error!(ErrorKind::InvalidEscapeSequence, [(start..self.byte, "unicode escape must have the format `\\u{hex}`")]));
                                 },
                             }
                         }
 
                         if buffer.len() < 2 {
-                            return Err(error!(ErrorKind::InvalidEscapeSequence, (self.byte-buffer.len()-1..self.byte-1, "must be a 2 digits or more")))
+                            return Err(error!(ErrorKind::InvalidEscapeSequence, [(self.byte-buffer.len()-1..self.byte-1, "must be a 2 digits or more")]))
                         }
 
                         if buffer.len() > 6 {
-                            return Err(error!(ErrorKind::InvalidEscapeSequence, (self.byte-buffer.len()-1..self.byte-1, "must be 6 digits or less")))
+                            return Err(error!(ErrorKind::InvalidEscapeSequence, [(self.byte-buffer.len()-1..self.byte-1, "must be 6 digits or less")]))
                         }
 
                         let digit = u32::from_str_radix(buffer.as_str(), 16).map_err(|_| {
-                            error!(ErrorKind::InvalidEscapeSequence, (self.byte-2..self.byte-1, "must be a valid hex digit"))
+                            error!(ErrorKind::InvalidEscapeSequence, [(self.byte-2..self.byte-1, "must be a valid hex digit")])
                         })?;
                         char::from_u32(digit)
-                            .ok_or(error!(ErrorKind::InvalidEscapeSequence, (self.byte-buffer.len()-1..self.byte-1, "must be a valid unicode character")))?
+                            .ok_or(error!(ErrorKind::InvalidEscapeSequence, [(self.byte-buffer.len()-1..self.byte-1, "must be a valid unicode character")]))?
                     },
                     'x' => {
                         let a = match chars.next() {
                             Some(v) => v,
-                            None => return Err(error!(ErrorKind::InvalidEscapeSequence, start..start)),
+                            None => return Err(error!(ErrorKind::InvalidEscapeSequence, [start..start])),
                         };
                         self.inc(a);
                         match a {
                             '0'..='9' | 'a'..='f' | 'A'..='F' => {
                                 let b = match chars.next() {
                                     Some(v) => v,
-                                    None => return Err(error!(ErrorKind::InvalidEscapeSequence, start..start)),
+                                    None => return Err(error!(ErrorKind::InvalidEscapeSequence, [start..start])),
                                 };
                                 self.inc(b);
                                 match b {
                                     '0'..='9' | 'a'..='f' | 'A'..='F' => {
                                         let digit = u32::from_str_radix(&self.src[self.byte-2..self.byte], 16).map_err(|_| {
-                                            error!(ErrorKind::InvalidEscapeSequence, (self.byte-2..self.byte, "must be a valid hex digit"))
+                                            error!(ErrorKind::InvalidEscapeSequence, [(self.byte-2..self.byte, "must be a valid hex digit")])
                                         })?;
                                         char::from_u32(digit)
-                                            .ok_or(error!(ErrorKind::InvalidEscapeSequence, (self.byte-2..self.byte, "must be a valid ansi character")))?
+                                            .ok_or(error!(ErrorKind::InvalidEscapeSequence, [(self.byte-2..self.byte, "must be a valid ansi character")]))?
                                     },
-                                    _ => return Err(error!(ErrorKind::InvalidEscapeSequence, (start..self.byte, "must be 2 hex digits")))
+                                    _ => return Err(error!(ErrorKind::InvalidEscapeSequence, [(start..self.byte, "must be 2 hex digits")]))
                                 }
                             },
-                            _ => return Err(error!(ErrorKind::InvalidEscapeSequence, (start..self.byte, "must be 2 hex digits")))
+                            _ => return Err(error!(ErrorKind::InvalidEscapeSequence, [(start..self.byte, "must be 2 hex digits")]))
                         }
                     }
-                    _ => return Err(error!(ErrorKind::InvalidSyntax, start..self.byte))
+                    _ => return Err(error!(ErrorKind::InvalidSyntax, [start..self.byte]))
                 }
             },
             _ => c
@@ -247,14 +247,14 @@ impl<'input> Tokenizer<'input> {
 
         let value = match self.next_char(ErrorKind::UnterminatedChar, start) {
             Err(e) => return Err(self.consume_bad_char(e)),
-            Ok((_, "'")) => return Err(error!(ErrorKind::InvalidSyntax, start..self.byte)),
+            Ok((_, "'")) => return Err(error!(ErrorKind::InvalidSyntax, [start..self.byte])),
             Ok((value, _)) => value
         };
 
-        let c = self.rest.chars().next().ok_or(error!(ErrorKind::UnterminatedChar, start..start))?;
+        let c = self.rest.chars().next().ok_or(error!(ErrorKind::UnterminatedChar, [start..start]))?;
         self.inc(c);
         if c != '\'' {
-            return Err(error!(ErrorKind::UnterminatedChar, start..self.byte-1))
+            return Err(error!(ErrorKind::UnterminatedChar, [start..self.byte-1]))
         }
 
         Ok(Token::char(value, &self.src[start..self.byte-1], self.byte))
@@ -416,7 +416,7 @@ impl<'input> Iterator for Tokenizer<'input> {
             // TODO: Parse a number token
             '0'..='9' => {
                 self.inc(c);
-                Some(Err(error!(ErrorKind::InvalidSyntax, (self.byte-c.len_utf8()..self.byte, "unexpected character"))))
+                Some(Err(error!(ErrorKind::InvalidSyntax, [(self.byte-c.len_utf8()..self.byte, "unexpected character")])))
             },
             other => {
                 let start = self.byte;
@@ -424,7 +424,7 @@ impl<'input> Iterator for Tokenizer<'input> {
                     return Some(Ok(Token::operator(op, &self.src[start..self.byte], self.byte)))
                 }
                 self.inc(other);
-                Some(Err(error!(ErrorKind::InvalidSyntax, (self.byte-c.len_utf8()..self.byte, "unexpected character"))))
+                Some(Err(error!(ErrorKind::InvalidSyntax, [(self.byte-c.len_utf8()..self.byte, "unexpected character")])))
             }
         }
     }
