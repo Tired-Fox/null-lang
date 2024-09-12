@@ -1,25 +1,30 @@
 use null::{lex::Tokenizer, source, Error};
 
-fn main() -> Result<(), Error> {
-    let src = r#"
+/*
 /**
 *  This is a doc comment for `main`
 */
 main :: fn() {
     /// This is invalid... must contain a value.
     _ := "`";
-    rune := '\u{1F60AAA}';
+    rune := '\u{1F60A}';
     message := "hello, world! \u{1F60A}";
     print(message)
 }
-"#;
+*/
 
-    let tokenizer = Tokenizer::new(src);
+fn main() -> Result<(), Error> {
+    //let source = r#"321.12e-10"#.to_string();
+
+    let path = std::path::PathBuf::from("assets/null/goal.nl");
+    let source = std::fs::read_to_string(&path).unwrap();
+
+    let tokenizer = Tokenizer::new(source.as_str());
 
     for token in tokenizer {
         match token {
             Ok(token) => println!("{:?}", token),
-            Err(e) => println!("{:?}", e.with_source_code(source!(src))),
+            Err(e) => println!("{:?}", e.with_source_code(source!(&path, &source))),
         }
     }
     Ok(())

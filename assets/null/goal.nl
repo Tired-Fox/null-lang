@@ -72,6 +72,9 @@ pub union Option {
     Week: u32,
     Month: u8,
     Year: u16
+    // These are the same type. Void, inferred if type is not provided, is just the tag with the value being `null`/`undefined`
+    other: void,
+    other2,
 }
 
 pub error Error {
@@ -85,7 +88,7 @@ union_enum :: fn() Error!?String {
     
     // Can mutate value
     let mut x: i32 = 0;
-    let my_option = Option { Day: Weekday::Monday }
+    let my_option = Option { Day: Weekday.Monday }
 }
 
 pub interface SayHello {

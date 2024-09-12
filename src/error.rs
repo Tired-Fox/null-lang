@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, ops::Range};
+use std::{cmp::Ordering, ops::Range, path::Path};
 
 use codesnake::{Block, CodeWidth, LineIndex};
 use owo_colors::{OwoColorize, Stream, Style};
@@ -82,9 +82,9 @@ pub struct Source {
 }
 
 impl Source {
-    pub fn new<N: std::fmt::Display, S: std::fmt::Display>(name: Option<N>, source: S) -> Self {
+    pub fn new<N: AsRef<Path>, S: std::fmt::Display>(name: Option<N>, source: S) -> Self {
         Self { 
-            name: name.map(|v| v.to_string()), 
+            name: name.map(|v| v.as_ref().display().to_string()), 
             source: source.to_string()
         }
     }
@@ -174,30 +174,38 @@ impl std::fmt::Debug for Error {
 
         write!(f, "{}", self.if_supports_color(Stream::Stderr, |text| text.bold()))?;
 
-
         if let (Some(src), false) = (self.source_code(), self.labels.is_empty()) {
             let idx = LineIndex::new(src.source.as_str());
-            let block = Block::new(
+            let mut labels = self.labels.iter().map(|l| l.span()).collect::<Vec<_>>();
+            labels.sort();
+
+            let (line, column) = src.start_pos(*labels.first().unwrap());
+
+            match Block::new(
                 &idx,
                 self.labels
                     .iter()
                     .map(|label| {
                         codesnake::Label::from(label).with_style(move |t| t.style(color).to_string())
                     })
-            )
-                .unwrap()
-                .map_code(|c| CodeWidth::new(c, c.len()));
-
-            let mut labels = self.labels.iter().map(|l| l.span()).collect::<Vec<_>>();
-            labels.sort();
-
-            let (line, column) = src.start_pos(*labels.first().unwrap());
-            writeln!(f, "\n{} {}", block.prologue(), match src.name.as_deref() {
-                Some(name) => format!("{name}:{line}:{column}"),
-                None => format!("??? {line}:{column}"),
-            })?;
-            write!(f, "{block}")?;
-            writeln!(f, "{}", block.epilogue())?;
+            ) {
+                Some(block) => {
+                    let block = block.map_code(|s| CodeWidth::new(s, s.len()));
+                    writeln!(f, "\n{} {}", block.prologue(), match src.name.as_deref() {
+                        Some(name) => format!("{name}:{line}:{column}"),
+                        None => format!("??? {line}:{column}"),
+                    })?;
+                    write!(f, "{block}")?;
+                    writeln!(f, "{}", block.epilogue())?;
+                },
+                None => {
+                    write!(f, "Failed to build code block")?;
+                    writeln!(f, "\n{}", match src.name.as_deref() {
+                        Some(name) => format!("{name}:{line}:{column}"),
+                        None => format!("??? {line}:{column}"),
+                    })?;
+                }
+            }
         }
         writeln!(f)
     }
@@ -212,6 +220,8 @@ pub enum ErrorKind {
     InvalidSyntax,
     #[error("invalid escape sequence")]
     InvalidEscapeSequence,
+    #[error("invalid number")]
+    InvalidNumber,
     #[error("unterminated string")]
     UnterminatedString,
     #[error("unterminated char")]
@@ -223,6 +233,7 @@ impl ErrorKind {
             Self::Unkown => 0,
             Self::InvalidSyntax => 1,
             Self::InvalidEscapeSequence => 2,
+            Self::InvalidNumber => 3,
             Self::UnterminatedString => 100,
             Self::UnterminatedChar => 101,
         }

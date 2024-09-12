@@ -1,8 +1,8 @@
 mod token;
 
-use std::str::FromStr;
+use std::{borrow::Cow, cell::RefCell, rc::Rc, str::FromStr};
 
-use token::{Keyword, Operator};
+use token::{ByteSize, Float, Keyword, Number, Operator, Signed, Unsigned};
 pub use token::{TokenKind, Token};
 use crate::{Error, ErrorKind, error};
 
@@ -293,7 +293,7 @@ impl<'input> Tokenizer<'input> {
     /// # Returns
     ///
     /// Consumed comment, doccomment, or divide operator
-    fn consume_comment(&mut self) -> Option<Result<Token<'input>, Error>> {
+    fn consume_comment_or_divide(&mut self) -> Option<Result<Token<'input>, Error>> {
         let mut chars = self.rest.chars();
         let c = chars.next().unwrap();
         self.inc(c);
@@ -336,6 +336,9 @@ impl<'input> Tokenizer<'input> {
                 self.inc(c);
 
                 let start = self.byte;
+
+                let mut nested: usize = 1;
+                let mut slash = false;
                 let mut escaped = false;
                 let mut star = false;
 
@@ -343,17 +346,25 @@ impl<'input> Tokenizer<'input> {
                     self.inc(c);
                     match c {
                         '\\' if !escaped => escaped = true,
-                        '*' if !escaped => star = true,
-                        '/' if !escaped && star => break,
+                        '*' if !escaped => {
+                            if slash { nested += 1 }
+                            else { star = true }
+                        },
+                        '/' if !escaped => {
+                            if star { nested = nested.saturating_sub(1); }
+                            else { slash = true }
+                            if nested == 0 { break }
+                        }
                         _ => {
                             escaped = false;
                             star = false;
+                            slash = false;
                         },
                     }
                 }
 
                 let repr = &self.src[start..self.byte-2];
-                if repr.starts_with("*") {
+                if repr.starts_with('*') {
                     return Some(Ok(Token {
                         kind: TokenKind::DocComment,
                         span: (start+1..self.byte-1).into(),
@@ -370,7 +381,248 @@ impl<'input> Tokenizer<'input> {
             _ => {},
         }
 
-        self.advance(Token::single(TokenKind::Operator(Operator::Divide), &self.src[self.byte-1..self.byte], self.byte))
+        Some(Ok(Token::single(TokenKind::Operator(Operator::Divide), self.src, self.byte-1)))
+    }
+
+    fn produce_number(&mut self, start: usize, negative: bool, floating: bool, byte_size: ByteSize, buff: &str) -> Result<Token<'input>, Error> {
+        match floating {
+            true => {
+                match Float::try_from((byte_size, buff)).map_err(|e| error!(ErrorKind::InvalidNumber, [(start..self.byte, e)])) {
+                    Ok(v) => Ok(Token::float(v, &self.src[start..self.byte], self.byte)),
+                    Err(e) => Err(e)
+                }
+            },
+            false => match negative {
+                true => {
+                    match Signed::try_from((byte_size, buff)).map_err(|e| error!(ErrorKind::InvalidNumber, [(start..self.byte, e)])) {
+                        Ok(v) => Ok(Token::signed(v, &self.src[start..self.byte], self.byte)),
+                        Err(e) => Err(e)
+                    }
+                },
+                false => {
+                    match Unsigned::try_from((byte_size, buff)).map_err(|e| error!(ErrorKind::InvalidNumber, [(start..self.byte, e)])) {
+                        Ok(v) => Ok(Token::unsigned(v, &self.src[start..self.byte], self.byte)),
+                        Err(e) => Err(e)
+                    }
+                }
+            },
+        }
+    }
+
+    /// TODO: Parse a number token
+    /// Move the pointer forward consuming a number literal
+    ///
+    /// Assumes the current character is a valid digit or `.`
+    ///
+    /// # Returns
+    ///
+    /// Consumed number with optional scientific notion and suffixed type.
+    fn consume_number(&mut self) -> Option<Result<Token<'input>, Error>> {
+        let mut chars = self.rest.chars();
+        let start = self.byte;
+
+        let mut buffer = String::new();
+        let mut floating = false;
+        let mut negative = false;
+        let mut byte_size = ByteSize::default();
+
+        //  NOTE: Infered defaults are i32 and f32. If the number is larger than either bump the type up
+        //  with inference. The inference is mostly done here when lexing and figuring out the
+        //  actual value.
+        //
+        //  Pattern: [\d.+-]
+        //      \d*(.\d*)?([eE][+-]?[1-9]\d*)
+        //
+        // While next is digit ... collect
+        //  1. If [i, u, f] then expect [8 16 32 64 128] and u & i also get `usize`
+        //  2. If `.` then infer float
+        //      While next is digit ... collect
+        //       Check for condition 3
+        //  3. If `e` | `E` then (+|-)?
+        //      While next is digit ... collect
+        //
+        let first = match chars.next() {
+            Some(v) => v,
+            None => return Some(Err(error!(ErrorKind::Unkown, [(self.byte..self.byte, "expected a number")])))
+        };
+
+        match first {
+            '+' | '-' => {
+                buffer.push(first); 
+                // TODO: Assert next char is a number or return the operator as is
+                let second = match chars.next() {
+                    Some(v) => v,
+                    None => {
+                        self.inc(first);
+                        return Some(Ok(Token::operator(if first == '+' { Operator::Plus } else { Operator::Minus }, &self.src[self.byte-first.len_utf8()..self.byte], self.byte)));
+                    }
+                };
+                if let '0'..='9' = second {
+                    self.inc(first);
+                    self.inc(second);
+                    negative = first == '-';
+                    buffer.push(second);
+                } else {
+                    if let Some(op) = self.consume_operator() {
+                        return Some(Ok(Token::operator(op, &self.src[start..self.byte], self.byte)))
+                    }
+                    self.inc(first);
+                    return Some(Err(error!(ErrorKind::InvalidSyntax, [(self.byte-first.len_utf8()..self.byte, "unexpected character")])));
+                }
+            },
+            '.' => {
+                buffer.push(first); 
+                floating = true;
+                // TODO: Assert next char is a number or return the operator as is
+                let second = match chars.next() {
+                    Some(v) => v,
+                    None => {
+                        self.inc(first);
+                        return Some(Ok(Token::operator(Operator::Dot, &self.src[self.byte-first.len_utf8()..self.byte], self.byte)));
+                    }
+                };
+                if let '0'..='9' = second {
+                    self.inc(first);
+                    self.inc(second);
+                    buffer.push(second);
+                } else {
+                    if let Some(op) = self.consume_operator() {
+                        return Some(Ok(Token::operator(op, &self.src[start..self.byte], self.byte)))
+                    }
+                    self.inc(first);
+                    return Some(Err(error!(ErrorKind::InvalidSyntax, [(self.byte-first.len_utf8()..self.byte, "unexpected character")])));
+                }
+            },
+            '0'..='9' => {
+                self.inc(first);
+                buffer.push(first);
+            },
+            _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(self.byte-first.len_utf8()..self.byte, "must start with 0..9, `.`, `-`, or `+`")])))
+        }
+
+        // Consume digits
+        while let Some(digit) = chars.next() {
+            if !digit.is_ascii_digit() {
+                break;
+            }
+            self.inc(digit);
+            buffer.push(digit)
+        }
+        let mut chars = self.rest.chars();
+
+        let next = match chars.next() {
+            Some(v) => v,
+            None => return Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
+        };
+
+        match next {
+            '.' => {
+                self.inc(next);
+                floating = true;
+                buffer.push(next);
+
+                while let Some(digit) = chars.next() {
+                    if !digit.is_ascii_digit() {
+                        break;
+                    }
+                    self.inc(digit);
+                    buffer.push(digit);
+                }
+                let mut chars = self.rest.chars();
+                let next = match chars.next() {
+                    Some(v) => v,
+                    None => return Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
+                };
+
+                if let 'e' | 'E' = next {
+                    self.inc(next);
+                    buffer.push(next);
+
+                    match chars.next() {
+                        Some(v) if v.is_ascii_digit() => {
+                            self.inc(v);
+                            buffer.push(v);
+                        },
+                        v @ Some('+'|'-') => {
+                            let v = v.unwrap();
+                            self.inc(v);
+                            buffer.push(v);
+
+                            match chars.next() {
+                                Some(v) if v.is_ascii_digit() => {
+                                    self.inc(v);
+                                    buffer.push(v);
+                                },
+                                _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(self.byte-next.len_utf8()..self.byte, "expected a digit 1..9")])))
+                            }
+                        }
+                        _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(self.byte-next.len_utf8()..self.byte, "expected a digit 1..9 or `+` or `-`")])))
+                    };
+                    
+                    while let Some(digit) = chars.next() {
+                        if !digit.is_ascii_digit() {
+                            break;
+                        }
+                        self.inc(digit);
+                        buffer.push(digit);
+                    }
+                    return Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
+                }
+
+                Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
+            },
+            'i' | 'u' | 'f' => {
+                let type_start = self.byte;
+                let ident = self.consume_ident();
+
+                if next == 'i' { negative = true }
+                else if next == 'f' { floating = true }
+
+                match ByteSize::from_str(ident).map_err(|e| error!(ErrorKind::InvalidNumber, [(type_start..self.byte, e)])) {
+                    Ok(size) => byte_size = size,
+                    Err(e) => return Some(Err(e))
+                }
+
+                Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
+            },
+            'e' | 'E' => {
+                self.inc(next);
+                buffer.push(next);
+
+                match chars.next() {
+                    Some(v) if v.is_ascii_digit() => {
+                        self.inc(v);
+                        buffer.push(v);
+                    },
+                    v @ Some('+'|'-') => {
+                        let v = v.unwrap();
+                        self.inc(v);
+                        buffer.push(v);
+
+                        match chars.next() {
+                            Some(v) if v.is_ascii_digit() => {
+                                self.inc(v);
+                                buffer.push(v);
+                            },
+                            _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(self.byte-next.len_utf8()..self.byte, "expected a digit 1..9")])))
+                        }
+                    }
+                    _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(self.byte-next.len_utf8()..self.byte, "expected a digit 1..9 or `+` or `-`")])))
+                };
+                
+                while let Some(digit) = chars.next() {
+                    if !digit.is_ascii_digit() {
+                        break;
+                    }
+                    self.inc(digit);
+                    buffer.push(digit);
+                }
+                Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
+            },
+            _ => {
+                Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
+            }
+        }
     }
 
     /// Advance the pointer given a token
@@ -401,7 +653,7 @@ impl<'input> Iterator for Tokenizer<'input> {
             ':' => self.advance(Token::single(TokenKind::Colon, self.src, self.byte)),
             // TODO: parse comment. Otherwise invalid character
             '\\' => self.advance(Token::single(TokenKind::Slash, self.src, self.byte)),
-            '/' => self.consume_comment(),
+            '/' => self.consume_comment_or_divide(),
             ',' => self.advance(Token::single(TokenKind::Comma, self.src, self.byte)),
             '?' => self.advance(Token::single(TokenKind::Question, self.src, self.byte)),
             ';' => self.advance(Token::single(TokenKind::Semicolon, self.src, self.byte)),
@@ -413,11 +665,7 @@ impl<'input> Iterator for Tokenizer<'input> {
             '}' => self.advance(Token::single(TokenKind::CloseBrace, self.src, self.byte)),
             '\'' => Some(self.consume_char()),
             '"' => Some(self.consume_string()),
-            // TODO: Parse a number token
-            '0'..='9' => {
-                self.inc(c);
-                Some(Err(error!(ErrorKind::InvalidSyntax, [(self.byte-c.len_utf8()..self.byte, "unexpected character")])))
-            },
+            '.' | '+' | '-' | '0'..='9' => self.consume_number(),
             other => {
                 let start = self.byte;
                 if let Some(op) = self.consume_operator() {

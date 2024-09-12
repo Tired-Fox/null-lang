@@ -113,13 +113,112 @@ pub enum Operator {
     XorEqual,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ByteSize {
+    B8,
+    B16,
+    #[default]
+    B32,
+    B64,
+    B128,
+    BSize
+}
+impl FromStr for ByteSize {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "u8" | "i8" => Self::B8,
+            "u16" | "i16" => Self::B16,
+            "u32" | "i32" | "f32" => Self::B32,
+            "u64" | "i64" | "f64" => Self::B64,
+            "usize" | "isize" => Self::BSize,
+            "u128" | "i128" => Self::B128,
+            // PERF: Better error message based on input
+            _ => return Err("invalid number type".into())
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIs)]
+pub enum Unsigned {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    USize(usize),
+    U128(u128),
+}
+impl TryFrom<(ByteSize, &str)> for Unsigned {
+    type Error = String;
+
+    fn try_from((size, value): (ByteSize, &str)) -> Result<Self, Self::Error> {
+        match size {
+            ByteSize::B8 => value.parse().map(Unsigned::U8).map_err(|_| "out of range for u8".into()),
+            ByteSize::B16 => value.parse().map(Unsigned::U16).map_err(|_| "out of range for u16".into()),
+            ByteSize::B32 => value.parse().map(Unsigned::U32).map_err(|_| "out of range for u32".into()),
+            ByteSize::B64 => value.parse().map(Unsigned::U64).map_err(|_| "out of range for u64".into()),
+            ByteSize::BSize => value.parse().map(Unsigned::USize).map_err(|_| "out of range for usize".into()),
+            ByteSize::B128 => value.parse().map(Unsigned::U128).map_err(|_| "out of range for u128".into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIs)]
+pub enum Signed {
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    ISize(isize),
+    I128(i128),
+}
+impl TryFrom<(ByteSize, &str)> for Signed {
+    type Error = String;
+
+    fn try_from((size, value): (ByteSize, &str)) -> Result<Self, Self::Error> {
+        match size {
+            ByteSize::B8 => value.parse().map(Signed::I8).map_err(|_| "out of range for i8".into()),
+            ByteSize::B16 => value.parse().map(Signed::I16).map_err(|_| "out of range for i16".into()),
+            ByteSize::B32 => value.parse().map(Signed::I32).map_err(|_| "out of range for i32".into()),
+            ByteSize::B64 => value.parse().map(Signed::I64).map_err(|_| "out of range for i64".into()),
+            ByteSize::BSize => value.parse().map(Signed::ISize).map_err(|_| "out of range for isize".into()),
+            ByteSize::B128 => value.parse().map(Signed::I128).map_err(|_| "out of range for i128".into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, strum::EnumIs)]
+pub enum Float {
+    F32(f32),
+    F64(f64),
+}
+impl TryFrom<(ByteSize, &str)> for Float {
+    type Error = String;
+
+    fn try_from((size, value): (ByteSize, &str)) -> Result<Self, Self::Error> {
+        match size {
+            ByteSize::B32 => value.parse().map(Float::F32).map_err(|_| "must be a valid f32".into()),
+            ByteSize::B64 => value.parse().map(Float::F64).map_err(|_| "must be a valid f64".into()),
+            // PERF: Better error message
+            _ => Err("floats are only allowed to be 32 and 64 bits".into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, strum::EnumIs)]
+pub enum Number {
+    Unsigned(Unsigned),
+    Signed(Signed),
+    Float(Float)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind {
     DocComment,
     Comment,
     String,
     Char(char),
-    Number,
+    Number(Number),
     Ident,
     Keyword(Keyword),
     Operator(Operator),
@@ -140,7 +239,7 @@ pub enum TokenKind {
     SingleQuote,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Token<'input> {
     pub(crate) kind: TokenKind,
     pub(crate) span: Span,
@@ -210,6 +309,30 @@ impl<'input> Token<'input> {
             kind,
             span: Span::from(pos..pos + 1),
             repr: Cow::from(&src[pos..=pos]),
+        }
+    }
+
+    pub(crate) fn float(value: Float, repr: &'_ str, pos: usize) -> Token<'_> {
+        Token {
+            kind: TokenKind::Number(Number::Float(value)),
+            span: (pos-repr.len()..pos).into(),
+            repr: Cow::from(repr),
+        }
+    }
+
+    pub(crate) fn unsigned(value: Unsigned, repr: &'_ str, pos: usize) -> Token<'_> {
+        Token {
+            kind: TokenKind::Number(Number::Unsigned(value)),
+            span: (pos-repr.len()..pos).into(),
+            repr: Cow::from(repr),
+        }
+    }
+
+    pub(crate) fn signed(value: Signed, repr: &'_ str, pos: usize) -> Token<'_> {
+        Token {
+            kind: TokenKind::Number(Number::Signed(value)),
+            span: (pos-repr.len()..pos).into(),
+            repr: Cow::from(repr),
         }
     }
 }
