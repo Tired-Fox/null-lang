@@ -113,7 +113,7 @@ say_hello :: fn(self: *Data) {
 }
 
 math :: fn(name: String, args: ..String) {
-  let result: int = 13*4+6/5%((4**4)//3)-3;
+  let result: int = 13_000*4+6/5%((4**4)//3)-3;
 
   if true && false || !false {
   }
@@ -126,7 +126,7 @@ optional :: (code?: i32) bool {
 }
 
 main :: fn() {
-    print("Hello, world!");
+    print("Hello, world! \u{1F60A}");
     print("Hello, {}!", Sub::NAME);
     // Slice that is not defined yet
     let value = [3]string{ "Some", "values", "here" };

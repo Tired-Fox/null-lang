@@ -1,8 +1,8 @@
 mod token;
 
-use std::{borrow::Cow, cell::RefCell, rc::Rc, str::FromStr};
+use std::str::FromStr;
 
-use token::{ByteSize, Float, Keyword, Number, Operator, Signed, Unsigned};
+use token::{ByteSize, Float, Keyword, Operator, Signed, Unsigned};
 pub use token::{TokenKind, Token};
 use crate::{Error, ErrorKind, error};
 
@@ -422,16 +422,12 @@ impl<'input> Tokenizer<'input> {
         let start = self.byte;
 
         let mut buffer = String::new();
+        // Infer a i32 and f32 when parsing respectively
         let mut floating = false;
         let mut negative = false;
         let mut byte_size = ByteSize::default();
 
-        //  NOTE: Infered defaults are i32 and f32. If the number is larger than either bump the type up
-        //  with inference. The inference is mostly done here when lexing and figuring out the
-        //  actual value.
-        //
-        //  Pattern: [\d.+-]
-        //      \d*(.\d*)?([eE][+-]?[1-9]\d*)
+        //  Pattern: [\d.+-][\d_]*(.[\d_]*)?([eE][+-]?[1-9][\d_]*)
         //
         // While next is digit ... collect
         //  1. If [i, u, f] then expect [8 16 32 64 128] and u & i also get `usize`
@@ -502,11 +498,11 @@ impl<'input> Tokenizer<'input> {
 
         // Consume digits
         while let Some(digit) = chars.next() {
-            if !digit.is_ascii_digit() {
+            if !digit.is_ascii_digit() && digit != '_' {
                 break;
             }
             self.inc(digit);
-            buffer.push(digit)
+            if digit.is_ascii_digit() { buffer.push(digit) }
         }
         let mut chars = self.rest.chars();
 
@@ -522,11 +518,11 @@ impl<'input> Tokenizer<'input> {
                 buffer.push(next);
 
                 while let Some(digit) = chars.next() {
-                    if !digit.is_ascii_digit() {
+                    if !digit.is_ascii_digit() && digit != '_' {
                         break;
                     }
                     self.inc(digit);
-                    buffer.push(digit);
+                    if digit.is_ascii_digit() { buffer.push(digit) }
                 }
                 let mut chars = self.rest.chars();
                 let next = match chars.next() {
@@ -560,11 +556,11 @@ impl<'input> Tokenizer<'input> {
                     };
                     
                     while let Some(digit) = chars.next() {
-                        if !digit.is_ascii_digit() {
+                        if !digit.is_ascii_digit() && digit != '_' {
                             break;
                         }
                         self.inc(digit);
-                        buffer.push(digit);
+                        if digit.is_ascii_digit() { buffer.push(digit) }
                     }
                     return Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
                 }
@@ -611,11 +607,11 @@ impl<'input> Tokenizer<'input> {
                 };
                 
                 while let Some(digit) = chars.next() {
-                    if !digit.is_ascii_digit() {
+                    if !digit.is_ascii_digit() && digit != '_' {
                         break;
                     }
                     self.inc(digit);
-                    buffer.push(digit);
+                    if digit.is_ascii_digit() { buffer.push(digit) }
                 }
                 Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
             },
@@ -652,7 +648,16 @@ impl<'input> Iterator for Tokenizer<'input> {
             },
             ':' => self.advance(Token::single(TokenKind::Colon, self.src, self.byte)),
             // TODO: parse comment. Otherwise invalid character
-            '\\' => self.advance(Token::single(TokenKind::Slash, self.src, self.byte)),
+            '\\' => {
+                self.inc(c);
+                match self.rest.chars().next() {
+                    Some(v) => {
+                        self.inc(v);
+                        Some(Err(error!(ErrorKind::InvalidSyntax, [(self.byte-c.len_utf8()-v.len_utf8()..self.byte, "unkown character")])))
+                    }
+                    None => Some(Err(error!(ErrorKind::InvalidSyntax, [self.byte-c.len_utf8()..self.byte])))
+                }
+            },
             '/' => self.consume_comment_or_divide(),
             ',' => self.advance(Token::single(TokenKind::Comma, self.src, self.byte)),
             '?' => self.advance(Token::single(TokenKind::Question, self.src, self.byte)),

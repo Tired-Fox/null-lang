@@ -1,30 +1,44 @@
+use std::{path::PathBuf, time::Instant};
+use clap::{Parser, Subcommand};
 use null::{lex::Tokenizer, source, Error};
 
-/*
-/**
-*  This is a doc comment for `main`
-*/
-main :: fn() {
-    /// This is invalid... must contain a value.
-    _ := "`";
-    rune := '\u{1F60A}';
-    message := "hello, world! \u{1F60A}";
-    print(message)
+#[derive(Debug, Subcommand)]
+enum Command {
+    Tokenize {
+        #[arg()]
+        path: PathBuf 
+    },
 }
-*/
+
+
+/// Full toolkit for the null programming language
+#[derive(Debug, Parser)]
+#[command(version, about, long_about = None)]
+struct Null {
+    #[command(subcommand)]
+    command: Command,
+}
 
 fn main() -> Result<(), Error> {
-    //let source = r#"321.12e-10"#.to_string();
+    let cli = Null::parse();
 
-    let path = std::path::PathBuf::from("assets/null/goal.nl");
-    let source = std::fs::read_to_string(&path).unwrap();
+    match cli.command {
+        Command::Tokenize { path } => {
+            let source = std::fs::read_to_string(&path).unwrap();
+            println!("PATH: {}", path.display());
 
-    let tokenizer = Tokenizer::new(source.as_str());
+            let tokenizer = Tokenizer::new(source.as_str());
+            
+            let lines = source.lines().count() as u32;
 
-    for token in tokenizer {
-        match token {
-            Ok(token) => println!("{:?}", token),
-            Err(e) => println!("{:?}", e.with_source_code(source!(&path, &source))),
+            let now = Instant::now();
+            for token in tokenizer {
+                if let Err(e) = token {
+                    println!("{:?}", e.with_source_code(source!(&path, &source)))
+                }
+            }
+            let duration = now.elapsed();
+            println!("{} lines ~ {}s {:0>3}ms {:0>3}ns", lines, duration.as_secs() % 60, duration.as_millis() % 1000, duration.as_nanos() % 1000);
         }
     }
     Ok(())

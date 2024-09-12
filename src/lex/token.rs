@@ -233,7 +233,6 @@ pub enum TokenKind {
     Comma,
     Colon,
     Question,
-    Slash,
     Semicolon,
     DoubleQuote,
     SingleQuote,
