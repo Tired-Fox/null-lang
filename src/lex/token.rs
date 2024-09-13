@@ -298,16 +298,17 @@ impl<'input> Token<'input> {
         let repr: Cow<'_, str> = repr.into();
         Token {
             kind: TokenKind::Char(value),
-            span: Span::from(pos-repr.len()-2..pos),
+            span: Span::from(pos.saturating_sub(repr.len())..pos),
             repr
         }
     }
 
-    pub(crate) fn single(kind: TokenKind, src: &'_ str, pos: usize) -> Token<'_> {
+    pub(crate) fn single(kind: TokenKind, repr: impl Into<Cow<'input, str>>, pos: usize) -> Token<'input> {
+        let repr: Cow<'input, str> = repr.into();
         Token {
             kind,
-            span: Span::from(pos..pos + 1),
-            repr: Cow::from(&src[pos..=pos]),
+            span: Span::from(pos-repr.len()..pos),
+            repr,
         }
     }
 

@@ -121,7 +121,7 @@ impl Source {
 #[derive(Default, Clone, thiserror::Error, PartialEq, Eq)]
 #[error("{kind}")]
 pub struct Error {
-    kind: ErrorKind,
+    pub(crate) kind: ErrorKind,
     level: Severity,
     labels: Vec<Label>,
     src: Option<Source>,
@@ -226,6 +226,8 @@ pub enum ErrorKind {
     UnterminatedString,
     #[error("unterminated char")]
     UnterminatedChar,
+    #[error("unexpected eof")]
+    UnexpectedEof,
 }
 impl ErrorKind {
     pub fn code(&self) -> usize {
@@ -236,6 +238,7 @@ impl ErrorKind {
             Self::InvalidNumber => 3,
             Self::UnterminatedString => 100,
             Self::UnterminatedChar => 101,
+            Self::UnexpectedEof => 200,
         }
     }
 }
