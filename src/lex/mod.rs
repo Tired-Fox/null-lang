@@ -529,7 +529,6 @@ impl<'input> Tokenizer<'input> {
         }
     }
 
-    /// TODO: Parse a number token
     /// Move the pointer forward consuming a number literal
     ///
     /// Assumes the current character is a valid digit or `.`
@@ -547,64 +546,26 @@ impl<'input> Tokenizer<'input> {
         let mut byte_size = ByteSize::default();
 
         //  Pattern: [\d.+-][\d_]*(.[\d_]*)?([eE][+-]?[1-9][\d_]*)
-        //
-        // While next is digit ... collect
-        //  1. If [i, u, f] then expect [8 16 32 64 128] and u & i also get `usize`
-        //  2. If `.` then infer float
-        //      While next is digit ... collect
-        //       Check for condition 3
-        //  3. If `e` | `E` then (+|-)?
-        //      While next is digit ... collect
-        //
-        let first = match self.consume() {
-            Some(v) => v,
-            None => return Some(Err(error!(ErrorKind::Unkown, [(start..self.byte, "expected a number")])))
-        };
+        match self.peek_n::<3>() {
+            [Some('0'..='9'), _, _] => buffer.push(self.consume().unwrap()),
+            [first @ Some('+'|'-'|'.'), Some('0'..='9'), _] => {
+                if let Some('.') = first { floating = true }
+                else if let Some('-') = first { negative = true }
 
-        match first {
-            '+' | '-' => {
-                buffer.push(first); 
-                let second = match self.peek() {
-                    Some(v) => v,
-                    None => {
-                        return Some(Ok(Token::operator(if first == '+' { Operator::Plus } else { Operator::Minus }, &self.src[self.byte-first.len_utf8()..self.byte], self.byte)));
-                    }
-                };
-
-                if matches!(second, '0'..='9' | '.') {
-                    self.consume();
-                    negative = first == '-';
-                    if second == '.' { floating = true }
-                    buffer.push(second);
-                } else {
-                    if let Some(op) = self.consume_operator() {
-                        return Some(Ok(Token::operator(op, &self.src[start..self.byte], self.byte)))
-                    }
-                    return Some(Err(error!(ErrorKind::InvalidSyntax, [(self.byte-first.len_utf8()..self.byte, "unexpected character")])));
-                }
+                buffer.push_str(self.consume_n_as_str(2))
             },
-            '.' => {
-                buffer.push(first); 
+            [first @ Some('+'|'-'), Some('.'), Some('0'..='9')] => {
                 floating = true;
-                // TODO: Assert next char is a number or return the operator as is
-                let second = match self.peek() {
-                    Some(v) => v,
-                    None => {
-                        return Some(Ok(Token::operator(Operator::Dot, &self.src[self.byte-first.len_utf8()..self.byte], self.byte)));
-                    }
-                };
-                if let '0'..='9' = second {
-                    self.consume();
-                    buffer.push(second);
-                } else {
-                    if let Some(op) = self.consume_operator() {
-                        return Some(Ok(Token::operator(op, &self.src[start..self.byte], self.byte)))
-                    }
-                    return Some(Err(error!(ErrorKind::InvalidSyntax, [(self.byte-first.len_utf8()..self.byte, "unexpected character")])));
-                }
+                if let Some('-') = first { negative = true }
+                buffer.push_str(self.consume_n_as_str(3))
             },
-            '0'..='9' => buffer.push(first),
-            _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(self.byte-first.len_utf8()..self.byte, "must start with 0..9, `.`, `-`, or `+`")])))
+            [Some('+'|'-'|'.'), _, _] => {
+                if let Some(op) = self.consume_operator() {
+                    return Some(Ok(Token::operator(op, &self.src[start..self.byte], self.byte)))
+                }
+                return Some(Err(error!(ErrorKind::InvalidSyntax, [(start..self.byte, "unexpected character")])));
+            },
+            _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(start..self.byte, "expected a number")])))
         }
 
         // Consume digits
@@ -613,13 +574,8 @@ impl<'input> Tokenizer<'input> {
             if c != '_' { buffer.push(c) }
         }
 
-        let next = match self.peek() {
-            Some(v) => v,
-            None => return Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
-        };
-
-        match next {
-            '.' => {
+        match self.peek() {
+            Some('.') => {
                 floating = true;
                 buffer.push(self.consume().unwrap());
 
@@ -639,22 +595,11 @@ impl<'input> Tokenizer<'input> {
                     buffer.push(self.consume().unwrap());
                     floating = true;
 
-                    match self.peek() {
-                        Some(v) if v.is_ascii_digit() => {
-                            buffer.push(self.consume().unwrap());
-                        },
-                        Some('+'|'-') => {
-                            buffer.push(self.consume().unwrap());
-
-                            match self.peek() {
-                                Some(v) if v.is_ascii_digit() => {
-                                    buffer.push(self.consume().unwrap());
-                                },
-                                _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(estart..self.byte, "expected a digit 1..9")])))
-                            }
-                        }
-                        _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(estart..self.byte, "expected a digit 1..9 or `+` or `-`")])))
-                    };
+                    match self.peek_n::<2>() {
+                        [Some('+'|'-'), Some('1'..='9')] => buffer.push_str(self.consume_n_as_str(2)),
+                        [Some('1'..='9'), _] => buffer.push(self.consume().unwrap()),
+                        _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(estart..self.byte, "invalid scientific notation")])))
+                    }
                     
                     // Consume digits
                     while matches!(self.peek(), Some('0'..='9' | '_')) {
@@ -667,12 +612,12 @@ impl<'input> Tokenizer<'input> {
 
                 Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
             },
-            'i' | 'u' | 'f' => {
+            v @ Some('i' | 'u' | 'f') => {
                 let type_start = self.byte;
                 let ident = self.consume_while(is_ident);
 
-                if next == 'i' { negative = true }
-                else if next == 'f' { floating = true }
+                if let Some('i') = v { negative = true }
+                else if let Some('f') = v { floating = true }
 
                 match ByteSize::from_str(ident).map_err(|e| error!(ErrorKind::InvalidNumber, [(type_start..self.byte, e)])) {
                     Ok(size) => byte_size = size,
@@ -681,27 +626,16 @@ impl<'input> Tokenizer<'input> {
 
                 Some(self.produce_number(start, negative, floating, byte_size, buffer.as_str()))
             },
-            'e' | 'E' => {
+            Some('e' | 'E') => {
                 let estart = self.byte;
                 buffer.push(self.consume().unwrap());
                 floating = true;
 
-                match self.peek() {
-                    Some(v) if v.is_ascii_digit() => {
-                        buffer.push(self.consume().unwrap());
-                    },
-                    Some('+'|'-') => {
-                        buffer.push(self.consume().unwrap());
-
-                        match self.peek() {
-                            Some(v) if v.is_ascii_digit() => {
-                                buffer.push(self.consume().unwrap());
-                            },
-                            _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(estart..self.byte, "expected a digit 1..9")])))
-                        }
-                    }
-                    _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(estart..self.byte, "expected a digit 1..9 or `+` or `-`")])))
-                };
+                match self.peek_n::<2>() {
+                    [Some('+'|'-'), Some('1'..='9')] => buffer.push_str(self.consume_n_as_str(2)),
+                    [Some('1'..='9'), _] => buffer.push(self.consume().unwrap()),
+                    _ => return Some(Err(error!(ErrorKind::InvalidNumber, [(estart..self.byte, "invalid scientific notation")])))
+                }
                 
                 // Consume digits
                 while matches!(self.peek(), Some('0'..='9' | '_')) {
@@ -777,6 +711,8 @@ mod test {
     use std::borrow::Cow;
 
     use token::Number;
+
+    use crate::source;
 
     use super::*;
 
