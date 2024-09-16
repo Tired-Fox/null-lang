@@ -33,16 +33,16 @@
            true ? true : false
 */
 
-const x: int = 0
-x : int : 0
-x :: 0
+const x: int = 0;
+x : int : 0;
+x :: 0;
 // Error cannot mutate immutable value
-x = 3
+x = 3;
 
-let x: i32 = 0
-x : i32 = 0
-x := 0
-x = 4
+let x: i32 = 0;
+x : i32 = 0;
+x := 0;
+x = 4;
 
 /*
     Multiline comment `/* markdown code escapes closing symbols */`
@@ -51,7 +51,7 @@ x = 4
 /**
   Doc comment: Supports markdown syntax
 */
-pub enum Weekday {
+pub weekday :: enum {
     Monday,
     Tuesday,
     Wednesday,
@@ -67,7 +67,7 @@ pub enum Weekday {
     would be the same thing.
  */
 
-pub union Option {
+pub Option = union {
     Day: Weekday,
     Week: u32,
     Month: u8,
@@ -77,7 +77,7 @@ pub union Option {
     other2,
 }
 
-pub error Error {
+pub Error = error {
     UnkownError,
     OptionError: String
 }

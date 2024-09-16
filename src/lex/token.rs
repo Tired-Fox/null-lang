@@ -14,6 +14,12 @@ pub enum Keyword {
     Let,
     Null,
     Interface,
+    Break,
+    Continue,
+    Defer,
+    Match,
+    Return,
+    // As
 }
 
 impl FromStr for Keyword {
@@ -29,6 +35,11 @@ impl FromStr for Keyword {
             "let" => Self::Let,
             "null" => Self::Null,
             "interface" => Self::Interface,
+            "break" => Self::Break,
+            "continue" => Self::Continue,
+            "defer" => Self::Defer,
+            "match" => Self::Match,
+            "return" => Self::Return,
             _ => return Err(())
         })
     }

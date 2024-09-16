@@ -2,7 +2,7 @@ mod token;
 
 use std::str::FromStr;
 
-use token::{ByteSize, Float, Keyword, Operator, Signed, Unsigned};
+pub use token::{ByteSize, Float, Keyword, Operator, Signed, Unsigned, Number};
 pub use token::{TokenKind, Token};
 use crate::{Error, ErrorKind, error};
 
@@ -29,7 +29,7 @@ impl<'input> Tokenizer<'input> {
     /// Consume the next character progressing the tokenizer 
     ///
     /// Automatically turns `\r\n` into `\n`
-    pub fn consume(&mut self) -> Option<char> {
+    pub(crate) fn consume(&mut self) -> Option<char> {
         let mut chars = self.src[self.byte..].chars();
         let char = chars.next();
         match char {
@@ -51,7 +51,7 @@ impl<'input> Tokenizer<'input> {
     /// Consume the next `N` characters progressing the tokenizer
     ///
     /// Automatically turns `\r\n` into `\n`
-    pub fn consume_n<const N: usize>(&mut self) -> [Option<char>;N] {
+    pub(crate) fn consume_n<const N: usize>(&mut self) -> [Option<char>;N] {
         let mut values = [None;N];
         let mut chars = self.src[self.byte..].chars().peekable();
         for value in values.iter_mut() {
@@ -78,7 +78,7 @@ impl<'input> Tokenizer<'input> {
     ///
     /// Characters as a slice of the source. This slice may be shorter
     /// than the specified length if the source does not contain enough characters
-    pub fn consume_n_as_str(&mut self, n: usize) -> &'input str {
+    pub(crate) fn consume_n_as_str(&mut self, n: usize) -> &'input str {
         let start = self.byte;
         self.byte += self.src[self.byte..].chars().take(n).map(|v| {
             v.len_utf8()
@@ -94,7 +94,7 @@ impl<'input> Tokenizer<'input> {
     /// # Returns
     ///
     /// Consumed slice of the source text.
-    pub fn consume_while<F>(&mut self, predicate: F) -> &'input str
+    pub(crate) fn consume_while<F>(&mut self, predicate: F) -> &'input str
     where
         F: Fn(char) -> bool
     {
@@ -118,7 +118,7 @@ impl<'input> Tokenizer<'input> {
     /// # Returns
     ///
     /// Consumed slice of the source text.
-    pub fn consume_while_state<S, F>(&mut self, mut state: S, predicate: F) -> &'input str
+    pub(crate) fn consume_while_state<S, F>(&mut self, mut state: S, predicate: F) -> &'input str
     where
         F: Fn(&mut S, char) -> bool
     {
@@ -218,7 +218,7 @@ impl<'input> Tokenizer<'input> {
     ///
     /// # Returns
     /// A single character as a slice of the source
-    pub fn consume_as_str(&mut self) -> &'input str {
+    pub(crate) fn consume_as_str(&mut self) -> &'input str {
         let start = self.byte;
         self.consume();
         &self.src[start..self.byte]
@@ -227,7 +227,7 @@ impl<'input> Tokenizer<'input> {
     /// Fetch the next character without progressing the tokenizer
     ///
     /// Automatically turns `\r\n` into `\n`
-    pub fn peek(&mut self) -> Option<char> {
+    pub(crate) fn peek(&mut self) -> Option<char> {
         let mut chars = self.src[self.byte..].chars();
         let peek = chars.next();
         if let Some('\r') = peek {
@@ -241,7 +241,7 @@ impl<'input> Tokenizer<'input> {
     /// Fetch the next 'N' characters without progressing the tokenizer
     ///
     /// Automatically turns `\r\n` into `\n`
-    pub fn peek_n<const N: usize>(&mut self) -> [Option<char>;N] {
+    pub(crate) fn peek_n<const N: usize>(&mut self) -> [Option<char>;N] {
         let mut peeked: [Option<char>;N] = [None;N];
         let mut chars = self.src[self.byte..].chars().peekable();
         for peek in peeked.iter_mut() {
@@ -263,7 +263,7 @@ impl<'input> Tokenizer<'input> {
     ///
     /// Peeks characters as a slice of the source. This slice may be shorter
     /// than the specified length if the source does not contain enough characters
-    pub fn peek_n_as_str(&mut self, n: usize) -> &'input str {
+    pub(crate) fn peek_n_as_str(&mut self, n: usize) -> &'input str {
         let end = self.src[self.byte..].chars().take(n).map(|v| v.len_utf8()).sum::<usize>();
         &self.src[self.byte..self.byte+end]
     }
@@ -271,7 +271,7 @@ impl<'input> Tokenizer<'input> {
     /// Fetch the `N`th character without progressing the tokenizer.
     ///
     /// Automatically turns `\r\n` into `\n`
-    pub fn peek_nth(&mut self, pos: usize) -> Option<char> {
+    pub(crate) fn peek_nth(&mut self, pos: usize) -> Option<char> {
         let mut chars = self.src[self.byte..].chars();
         let peek = chars.nth(pos);
         if let Some('\r') = peek {
@@ -280,6 +280,11 @@ impl<'input> Tokenizer<'input> {
             }
         }
         peek
+    }
+
+    /// Get the current byte the tokenizer is processing
+    pub fn byte(&self) -> usize {
+        self.byte
     }
 
     /// Get the current line of the source the tokenizer is processing

@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, ops::Range};
 
 pub mod lex;
+pub mod parse;
 mod error;
 
 pub use error::{Error, ErrorKind, Source, Label};
