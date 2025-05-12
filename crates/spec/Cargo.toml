@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+futures-util = "0.3.31"
+pin-project-lite = "0.2.16"
 
 [dev-dependencies]
 tempdir = "0.3.7"

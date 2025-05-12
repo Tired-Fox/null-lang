@@ -5,8 +5,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Error {
     inner: Box<dyn Diagnostic>,
 }
+
 unsafe impl Sync for Error {}
 unsafe impl Send for Error {}
+
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (style, style_reset) = match self.inner.severity() {
@@ -49,10 +51,19 @@ impl std::fmt::Debug for Error {
         Ok(())
     }
 }
+
 impl<D: Diagnostic + 'static> From<D> for Error {
     fn from(value: D) -> Self {
         Self {
             inner: Box::new(value),
+        }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Self {
+            inner: Box::new(InternalError::IoError(value)),
         }
     }
 }
@@ -90,12 +101,14 @@ pub trait Diagnostic: std::error::Error {
 #[derive(Debug)]
 pub enum InternalError {
     IoError(std::io::Error),
+    Utf8,
     OutOfBounds,
 }
 impl std::fmt::Display for InternalError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::IoError(error) => write!(f, "{error}"),
+            Self::Utf8 => write!(f, "source contains invalid utf8 encoding"),
             Self::OutOfBounds => write!(f, "span is out of bounds of the source"),
         }
     }
