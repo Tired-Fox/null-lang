@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 futures-util = "0.3.31"
 pin-project-lite = "0.2.16"
+strum = { version = "0.27.1", features = ["derive"] }
 
 [dev-dependencies]
 tempdir = "0.3.7"

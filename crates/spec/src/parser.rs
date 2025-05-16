@@ -11,21 +11,10 @@ impl<I> Parser<I> {
     }
 }
 
-impl<I: Iterator<Item = u8>> Iterator for Parser<I> {
-    type Item = Result<char>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match next_code_point(&mut self.inner) {
-            Ok(v) => match v {
-                Some(ch) => {
-                    let ch = unsafe { char::from_u32_unchecked(ch) };
-                    self.position += ch.len_utf8();
-                    Some(Ok(ch))
-                },
-                None => None
-            },
-            Err(e) => Some(Err(e)),
-        }
+impl<I: Iterator<Item = u8>> Parser<I> {
+    pub fn next_code_point(&mut self) -> Result<Option<char>> {
+        next_code_point(&mut self.inner)
+            .map(|o| o.map(|cp| unsafe { char::from_u32_unchecked(cp) }))
     }
 }
 
@@ -97,9 +86,22 @@ mod test {
 
     static SOURCE: &str = "The brown fox jumped over the lazy dog 😊";
 
+    struct ParseIter<I> {
+        parser: Parser<I>
+    }
+    impl<I: Iterator<Item = u8>> Iterator for ParseIter<I> {
+        type Item = Result<char>;
+        fn next(&mut self) -> Option<Self::Item> {
+            match self.parser.next_code_point() {
+                Ok(cp) => cp.map(Ok),
+                Err(e) => Some(Err(e)),
+            }
+        }
+    }
+
     #[test]
     fn str_to_utf8_iter() {
-        let parser = Parser::from(SOURCE.bytes());
+        let parser = ParseIter { parser: Parser::from(SOURCE.bytes()) };
         assert!(matches!(parser.collect::<Result<String>>().as_deref(), Ok(s) if s == SOURCE));
     }
 
@@ -109,11 +111,13 @@ mod test {
         let file_path = dir.path().join("code.txt");
         std::fs::write(&file_path, SOURCE)?;
 
-        let parser = Parser::from(
-            BufReader::new(std::fs::OpenOptions::new().read(true).open(&file_path)?)
-                .bytes()
-                .map_while(std::result::Result::ok)
-        );
+        let parser = ParseIter { 
+            parser: Parser::from(
+                BufReader::new(std::fs::OpenOptions::new().read(true).open(&file_path)?)
+                    .bytes()
+                    .map_while(std::result::Result::ok)
+            )
+        };
 
         assert!(matches!(parser.collect::<Result<String>>().as_deref(), Ok(s) if s == SOURCE));
 
